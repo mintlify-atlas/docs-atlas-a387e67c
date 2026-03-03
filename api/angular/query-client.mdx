@@ -1,0 +1,274 @@
+---
+title: QueryClient
+description: Angular Query's QueryClient for managing query and mutation cache
+---
+
+The `QueryClient` is the core class that manages the query and mutation cache for Angular Query. It provides the same API as the base QueryClient from `@tanstack/query-core`.
+
+## Import
+
+```ts
+import { QueryClient } from '@tanstack/angular-query-experimental'
+```
+
+## Providing QueryClient
+
+In Angular, the QueryClient is typically provided at the application level:
+
+```ts
+import { ApplicationConfig, provideZoneChangeDetection } from '@angular/core'
+import { QueryClient, provideAngularQuery } from '@tanstack/angular-query-experimental'
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideZoneChangeDetection({ eventCoalescing: true }),
+    provideAngularQuery(new QueryClient({
+      defaultOptions: {
+        queries: {
+          staleTime: 60 * 1000,
+          gcTime: 10 * 60 * 1000,
+        },
+      },
+    })),
+  ],
+}
+```
+
+## Constructor
+
+```ts
+const queryClient = new QueryClient(config?: QueryClientConfig)
+```
+
+### Config
+
+<ParamField path="config" type="QueryClientConfig">
+  Configuration object for the QueryClient.
+
+  <Expandable title="properties">
+    <ParamField path="queryCache" type="QueryCache">
+      Custom QueryCache instance. If not provided, a new one will be created.
+    </ParamField>
+
+    <ParamField path="mutationCache" type="MutationCache">
+      Custom MutationCache instance. If not provided, a new one will be created.
+    </ParamField>
+
+    <ParamField path="defaultOptions" type="DefaultOptions">
+      Default options for queries and mutations.
+
+      ```ts
+      defaultOptions: {
+        queries: {
+          staleTime: 60 * 1000,
+          gcTime: 10 * 60 * 1000,
+        },
+        mutations: {
+          retry: 1,
+        },
+      }
+      ```
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Injecting QueryClient
+
+Use `injectQueryClient` to access the QueryClient in components and services:
+
+```ts
+import { Component, inject } from '@angular/core'
+import { injectQueryClient } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-example',
+  template: `...`,
+})
+export class ExampleComponent {
+  #queryClient = injectQueryClient()
+
+  invalidateTodos() {
+    this.#queryClient.invalidateQueries({ queryKey: ['todos'] })
+  }
+}
+```
+
+## Methods
+
+### Query Data Methods
+
+<ResponseField name="getQueryData" type="<TData = unknown>(queryKey: QueryKey) => TData | undefined">
+  Returns the cached data for a query.
+
+  ```ts
+  const data = queryClient.getQueryData(['todos'])
+  ```
+</ResponseField>
+
+<ResponseField name="setQueryData" type="<TData>(queryKey: QueryKey, updater: Updater<TData | undefined, TData | undefined>) => TData | undefined">
+  Updates the cached data for a query.
+
+  ```ts
+  queryClient.setQueryData(['todos'], (old) => [...old, newTodo])
+  ```
+</ResponseField>
+
+<ResponseField name="getQueriesData" type="<TData = unknown>(filters: QueryFilters) => Array<[QueryKey, TData | undefined]>">
+  Returns cached data for multiple queries matching the filters.
+</ResponseField>
+
+<ResponseField name="setQueriesData" type="<TData>(filters: QueryFilters, updater: Updater<TData | undefined, TData | undefined>) => Array<[QueryKey, TData | undefined]>">
+  Updates cached data for multiple queries matching the filters.
+</ResponseField>
+
+### Invalidation Methods
+
+<ResponseField name="invalidateQueries" type="(filters?: InvalidateQueryFilters, options?: InvalidateOptions) => Promise<void>">
+  Invalidates queries and triggers refetches.
+
+  ```ts
+  await queryClient.invalidateQueries({ queryKey: ['todos'] })
+  ```
+</ResponseField>
+
+<ResponseField name="refetchQueries" type="(filters?: RefetchQueryFilters, options?: RefetchOptions) => Promise<void>">
+  Refetches queries matching the filters.
+</ResponseField>
+
+<ResponseField name="resetQueries" type="(filters?: QueryFilters, options?: ResetOptions) => Promise<void>">
+  Resets queries to their initial state.
+</ResponseField>
+
+<ResponseField name="removeQueries" type="(filters?: QueryFilters) => void">
+  Removes queries from the cache.
+</ResponseField>
+
+<ResponseField name="cancelQueries" type="(filters?: QueryFilters, options?: CancelOptions) => Promise<void>">
+  Cancels ongoing queries.
+</ResponseField>
+
+### Fetch Methods
+
+<ResponseField name="fetchQuery" type="<TData>(options: FetchQueryOptions) => Promise<TData>">
+  Fetches a query and returns the data.
+
+  ```ts
+  const data = await queryClient.fetchQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+  })
+  ```
+</ResponseField>
+
+<ResponseField name="prefetchQuery" type="(options: FetchQueryOptions) => Promise<void>">
+  Prefetches a query and stores it in the cache.
+</ResponseField>
+
+<ResponseField name="fetchInfiniteQuery" type="<TData>(options: FetchInfiniteQueryOptions) => Promise<InfiniteData<TData>>">
+  Fetches an infinite query.
+</ResponseField>
+
+<ResponseField name="prefetchInfiniteQuery" type="(options: FetchInfiniteQueryOptions) => Promise<void>">
+  Prefetches an infinite query.
+</ResponseField>
+
+### Query Status Methods
+
+<ResponseField name="isFetching" type="(filters?: QueryFilters) => number">
+  Returns the number of queries currently fetching.
+
+  ```ts
+  const count = queryClient.isFetching()
+  const todosCount = queryClient.isFetching({ queryKey: ['todos'] })
+  ```
+</ResponseField>
+
+<ResponseField name="isMutating" type="(filters?: MutationFilters) => number">
+  Returns the number of mutations currently pending.
+</ResponseField>
+
+## Example Usage
+
+### Prefetching
+
+```ts
+import { Component, inject } from '@angular/core'
+import { injectQueryClient } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-todo-list',
+  template: `
+    @for (todo of todos; track todo.id) {
+      <button (mouseenter)="prefetchTodo(todo.id)">
+        {{ todo.title }}
+      </button>
+    }
+  `,
+})
+export class TodoListComponent {
+  #queryClient = injectQueryClient()
+
+  async prefetchTodo(id: number) {
+    await this.#queryClient.prefetchQuery({
+      queryKey: ['todo', id],
+      queryFn: () => fetchTodo(id),
+    })
+  }
+}
+```
+
+### Manual Cache Updates
+
+```ts
+import { Component, inject } from '@angular/core'
+import { injectQueryClient } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-example',
+  template: `...`,
+})
+export class ExampleComponent {
+  #queryClient = injectQueryClient()
+
+  addTodoOptimistically(newTodo: Todo) {
+    this.#queryClient.setQueryData(['todos'], (old: Todo[]) => {
+      return [...old, newTodo]
+    })
+  }
+
+  removeTodoFromCache(todoId: number) {
+    this.#queryClient.setQueryData(['todos'], (old: Todo[]) => {
+      return old.filter(todo => todo.id !== todoId)
+    })
+  }
+}
+```
+
+### Invalidating on Route Changes
+
+```ts
+import { Component, inject, OnInit } from '@angular/core'
+import { Router, NavigationEnd } from '@angular/router'
+import { injectQueryClient } from '@tanstack/angular-query-experimental'
+import { filter } from 'rxjs/operators'
+
+@Component({
+  selector: 'app-root',
+  template: `<router-outlet />`,
+})
+export class AppComponent implements OnInit {
+  #queryClient = injectQueryClient()
+  #router = inject(Router)
+
+  ngOnInit() {
+    this.#router.events
+      .pipe(filter(event => event instanceof NavigationEnd))
+      .subscribe(() => {
+        // Invalidate stale queries on route change
+        this.#queryClient.invalidateQueries({
+          refetchType: 'none',
+        })
+      })
+  }
+}
+```

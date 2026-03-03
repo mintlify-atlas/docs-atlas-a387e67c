@@ -1,0 +1,401 @@
+---
+title: useSuspenseInfiniteQuery
+description: React hook for fetching infinite data with React Suspense integration
+---
+
+The `useSuspenseInfiniteQuery` hook is a version of `useInfiniteQuery` that integrates with React Suspense. It suspends rendering while the query is loading and always returns data (never undefined).
+
+## Import
+
+```tsx
+import { useSuspenseInfiniteQuery } from '@tanstack/react-query'
+```
+
+## Signature
+
+```tsx
+function useSuspenseInfiniteQuery<
+  TQueryFnData,
+  TError = DefaultError,
+  TData = InfiniteData<TQueryFnData>,
+  TQueryKey extends QueryKey = QueryKey,
+  TPageParam = unknown,
+>(
+  options: UseSuspenseInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>,
+  queryClient?: QueryClient,
+): UseSuspenseInfiniteQueryResult<TData, TError>
+```
+
+## Type Parameters
+
+- `TQueryFnData` - The type of data returned by each page of the query function
+- `TError` - The type of error that can be thrown (defaults to `DefaultError`)
+- `TData` - The type of data returned after transformation (defaults to `InfiniteData<TQueryFnData>`)
+- `TQueryKey` - The type of the query key (defaults to `QueryKey`)
+- `TPageParam` - The type of the page parameter
+
+## Parameters
+
+### options
+
+Type: `UseSuspenseInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>`
+
+Accepts all `useInfiniteQuery` options except:
+- `enabled` - Always `true` for suspense queries
+- `throwOnError` - Always `true` for suspense queries (errors are thrown to error boundaries)
+- `placeholderData` - Not supported with suspense queries
+
+Required options:
+
+#### queryKey
+
+- **Type:** `TQueryKey`
+- **Required:** Yes
+
+A unique identifier for the query.
+
+#### queryFn
+
+- **Type:** `(context: QueryFunctionContext<TQueryKey, TPageParam>) => Promise<TQueryFnData>`
+- **Required:** Yes
+
+The function that fetches each page. **Note:** `skipToken` is not allowed with `useSuspenseInfiniteQuery`.
+
+#### initialPageParam
+
+- **Type:** `TPageParam`
+- **Required:** Yes
+
+The default page parameter to use for the first page.
+
+#### getNextPageParam
+
+- **Type:** `(lastPage: TQueryFnData, allPages: TQueryFnData[], lastPageParam: TPageParam, allPageParams: TPageParam[]) => TPageParam | undefined | null`
+- **Required:** Yes
+
+Function to get the next page parameter.
+
+### queryClient
+
+- **Type:** `QueryClient`
+- **Optional**
+
+A custom QueryClient instance.
+
+## Returns
+
+Type: `UseSuspenseInfiniteQueryResult<TData, TError>`
+
+The suspense infinite query result object, similar to `UseInfiniteQueryResult` but with these key differences:
+
+### data
+
+- **Type:** `InfiniteData<TQueryFnData>` (never `undefined`)
+
+The accumulated data from all pages is **always defined** when the component renders.
+
+```tsx
+{
+  pages: TQueryFnData[],
+  pageParams: TPageParam[]
+}
+```
+
+### Other Properties
+
+All other properties from `UseInfiniteQueryResult` are available except:
+- `isPlaceholderData` - Not available (suspense queries don't support placeholder data)
+- `promise` - Not available in the result type
+
+The result will never have `isPending: true` since the component suspends during the pending state.
+
+## Examples
+
+### Basic Suspense Infinite Query
+
+```tsx
+import { Suspense } from 'react'
+import { useSuspenseInfiniteQuery } from '@tanstack/react-query'
+
+function Projects() {
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useSuspenseInfiniteQuery({
+    queryKey: ['projects'],
+    queryFn: async ({ pageParam }) => {
+      const response = await fetch(`/api/projects?cursor=${pageParam}`)
+      return response.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+
+  // data is always defined - no need to check!
+  return (
+    <div>
+      {data.pages.map((page, i) => (
+        <div key={i}>
+          {page.items.map((project) => (
+            <div key={project.id}>{project.name}</div>
+          ))}
+        </div>
+      ))}
+      <button
+        onClick={() => fetchNextPage()}
+        disabled={!hasNextPage || isFetchingNextPage}
+      >
+        {isFetchingNextPage
+          ? 'Loading more...'
+          : hasNextPage
+          ? 'Load More'
+          : 'Nothing more to load'}
+      </button>
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading projects...</div>}>
+      <Projects />
+    </Suspense>
+  )
+}
+```
+
+### With Error Boundary
+
+```tsx
+import { Suspense } from 'react'
+import { ErrorBoundary } from 'react-error-boundary'
+import { useSuspenseInfiniteQuery } from '@tanstack/react-query'
+
+function Feed() {
+  const { data, fetchNextPage, hasNextPage } = useSuspenseInfiniteQuery({
+    queryKey: ['feed'],
+    queryFn: async ({ pageParam }) => {
+      const response = await fetch(`/api/feed?cursor=${pageParam}`)
+      if (!response.ok) throw new Error('Failed to fetch feed')
+      return response.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+
+  return (
+    <div>
+      {data.pages.map((page) =>
+        page.items.map((item) => <div key={item.id}>{item.title}</div>)
+      )}
+      {hasNextPage && (
+        <button onClick={() => fetchNextPage()}>Load More</button>
+      )}
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <ErrorBoundary fallback={<div>Error loading feed</div>}>
+      <Suspense fallback={<div>Loading feed...</div>}>
+        <Feed />
+      </Suspense>
+    </ErrorBoundary>
+  )
+}
+```
+
+### Bi-directional Pagination
+
+```tsx
+import { Suspense } from 'react'
+import { useSuspenseInfiniteQuery } from '@tanstack/react-query'
+
+function Messages() {
+  const {
+    data,
+    fetchNextPage,
+    fetchPreviousPage,
+    hasNextPage,
+    hasPreviousPage,
+    isFetchingNextPage,
+    isFetchingPreviousPage,
+  } = useSuspenseInfiniteQuery({
+    queryKey: ['messages'],
+    queryFn: async ({ pageParam }) => {
+      const response = await fetch(`/api/messages?cursor=${pageParam}`)
+      return response.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    getPreviousPageParam: (firstPage) => firstPage.prevCursor,
+  })
+
+  return (
+    <div>
+      <button
+        onClick={() => fetchPreviousPage()}
+        disabled={!hasPreviousPage || isFetchingPreviousPage}
+      >
+        {isFetchingPreviousPage ? 'Loading...' : 'Load Newer'}
+      </button>
+
+      {data.pages.map((page) =>
+        page.messages.map((message) => (
+          <div key={message.id}>{message.text}</div>
+        ))
+      )}
+
+      <button
+        onClick={() => fetchNextPage()}
+        disabled={!hasNextPage || isFetchingNextPage}
+      >
+        {isFetchingNextPage ? 'Loading...' : 'Load Older'}
+      </button>
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading messages...</div>}>
+      <Messages />
+    </Suspense>
+  )
+}
+```
+
+### Nested Suspense Boundaries
+
+```tsx
+import { Suspense } from 'react'
+import { useSuspenseInfiniteQuery } from '@tanstack/react-query'
+
+function Comments({ postId }: { postId: number }) {
+  const { data } = useSuspenseInfiniteQuery({
+    queryKey: ['comments', postId],
+    queryFn: ({ pageParam }) => fetchComments(postId, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+
+  return (
+    <div>
+      {data.pages.flatMap((page) =>
+        page.comments.map((comment) => (
+          <div key={comment.id}>{comment.text}</div>
+        ))
+      )}
+    </div>
+  )
+}
+
+function Post({ postId }: { postId: number }) {
+  const { data } = useSuspenseQuery({
+    queryKey: ['post', postId],
+    queryFn: () => fetchPost(postId),
+  })
+
+  return (
+    <div>
+      <h1>{data.title}</h1>
+      <p>{data.body}</p>
+      <Suspense fallback={<div>Loading comments...</div>}>
+        <Comments postId={postId} />
+      </Suspense>
+    </div>
+  )
+}
+```
+
+### With Select
+
+```tsx
+function Projects() {
+  const { data } = useSuspenseInfiniteQuery({
+    queryKey: ['projects'],
+    queryFn: ({ pageParam }) => fetchProjects(pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    select: (data) => ({
+      // Flatten all pages into a single array
+      projects: data.pages.flatMap((page) => page.items),
+      pageParams: data.pageParams,
+    }),
+  })
+
+  // data.projects is a flat array of all items across all pages
+  return (
+    <div>
+      {data.projects.map((project) => (
+        <div key={project.id}>{project.name}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+### Refetching All Pages
+
+```tsx
+function Feed() {
+  const { data, refetch, isRefetching, fetchNextPage } =
+    useSuspenseInfiniteQuery({
+      queryKey: ['feed'],
+      queryFn: ({ pageParam }) => fetchFeed(pageParam),
+      initialPageParam: 0,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+    })
+
+  return (
+    <div>
+      <button onClick={() => refetch()} disabled={isRefetching}>
+        {isRefetching ? 'Refreshing...' : 'Refresh All'}
+      </button>
+      {data.pages.map((page) =>
+        page.items.map((item) => <div key={item.id}>{item.title}</div>)
+      )}
+    </div>
+  )
+}
+```
+
+### Type Safety
+
+```tsx
+type Project = {
+  id: number
+  name: string
+}
+
+type ProjectsPage = {
+  items: Project[]
+  nextCursor?: number
+}
+
+function Projects() {
+  const { data } = useSuspenseInfiniteQuery<ProjectsPage>({
+    queryKey: ['projects'],
+    queryFn: async ({ pageParam }) => {
+      const response = await fetch(`/api/projects?cursor=${pageParam}`)
+      return response.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+
+  // data is always typed as InfiniteData<ProjectsPage>
+  return (
+    <div>
+      {data.pages.map((page) =>
+        page.items.map((project) => (
+          <div key={project.id}>{project.name}</div>
+        ))
+      )}
+    </div>
+  )
+}
+```

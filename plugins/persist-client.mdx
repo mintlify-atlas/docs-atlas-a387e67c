@@ -1,0 +1,336 @@
+---
+title: Persisting Query Cache
+description: Persist and restore your TanStack Query cache to localStorage, AsyncStorage, or custom storage solutions
+---
+
+TanStack Query provides plugins to persist your query cache to storage and restore it on application reload. This is useful for offline support and improving initial load performance.
+
+## Installation
+
+Install the persist client package and a persister:
+
+```bash
+npm install @tanstack/react-query-persist-client
+npm install @tanstack/query-sync-storage-persister
+# or for async storage (React Native)
+npm install @tanstack/query-async-storage-persister
+```
+
+## Basic Usage
+
+### With localStorage (Web)
+
+```tsx
+import { QueryClient } from '@tanstack/react-query'
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      gcTime: 1000 * 60 * 60 * 24, // 24 hours
+    },
+  },
+})
+
+const persister = createSyncStoragePersister({
+  storage: window.localStorage,
+})
+
+function App() {
+  return (
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister }}
+    >
+      {/* Your application */}
+    </PersistQueryClientProvider>
+  )
+}
+```
+
+### With AsyncStorage (React Native)
+
+```tsx
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { QueryClient } from '@tanstack/react-query'
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      gcTime: 1000 * 60 * 60 * 24, // 24 hours
+    },
+  },
+})
+
+const asyncStoragePersister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+})
+
+function App() {
+  return (
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister: asyncStoragePersister }}
+    >
+      {/* Your application */}
+    </PersistQueryClientProvider>
+  )
+}
+```
+
+## Persist Options
+
+<ParamField path="persister" type="Persister" required>
+  The persister instance to use for storing and restoring the cache.
+</ParamField>
+
+<ParamField path="maxAge" type="number" default={86400000}>
+  The maximum age of the cache in milliseconds (default: 24 hours). If persisted cache is older, it will be discarded.
+</ParamField>
+
+<ParamField path="buster" type="string" default="">
+  A unique string to invalidate existing caches. Change this value to force all users to start with a fresh cache.
+  
+  ```tsx
+  persistOptions={{ 
+    persister,
+    buster: 'v2' // Increment when you want to invalidate old caches
+  }}
+  ```
+</ParamField>
+
+<ParamField path="dehydrateOptions" type="DehydrateOptions">
+  Options to pass to the `dehydrate` function when persisting.
+  
+  ```tsx
+  dehydrateOptions={{
+    shouldDehydrateQuery: (query) => {
+      // Only persist successful queries
+      return query.state.status === 'success'
+    }
+  }}
+  ```
+</ParamField>
+
+<ParamField path="hydrateOptions" type="HydrateOptions">
+  Options to pass to the `hydrate` function when restoring.
+</ParamField>
+
+## Creating a Persister
+
+### Sync Storage Persister
+
+For synchronous storage like localStorage or sessionStorage:
+
+```tsx
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
+
+const persister = createSyncStoragePersister({
+  storage: window.localStorage,
+  key: 'REACT_QUERY_OFFLINE_CACHE',
+  throttleTime: 1000, // Throttle saves to every 1 second
+  serialize: JSON.stringify,
+  deserialize: JSON.parse,
+})
+```
+
+#### Options
+
+<ParamField path="storage" type="Storage" required>
+  The storage client (must implement `getItem`, `setItem`, `removeItem`).
+</ParamField>
+
+<ParamField path="key" type="string" default="REACT_QUERY_OFFLINE_CACHE">
+  The storage key to use.
+</ParamField>
+
+<ParamField path="throttleTime" type="number" default={1000}>
+  Throttle time in milliseconds to avoid spamming storage writes.
+</ParamField>
+
+<ParamField path="serialize" type="function" default="JSON.stringify">
+  Custom serialization function.
+</ParamField>
+
+<ParamField path="deserialize" type="function" default="JSON.parse">
+  Custom deserialization function.
+</ParamField>
+
+### Async Storage Persister
+
+For asynchronous storage like AsyncStorage or IndexedDB:
+
+```tsx
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+
+const persister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: 'REACT_QUERY_OFFLINE_CACHE',
+  throttleTime: 1000,
+})
+```
+
+The async persister accepts the same options as the sync persister.
+
+## Manual Persistence
+
+If you need more control, you can use the lower-level API:
+
+```tsx
+import { persistQueryClient } from '@tanstack/react-query-persist-client'
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
+
+const queryClient = new QueryClient()
+const persister = createSyncStoragePersister({
+  storage: window.localStorage,
+})
+
+const [unsubscribe, restorePromise] = persistQueryClient({
+  queryClient,
+  persister,
+  maxAge: 1000 * 60 * 60 * 24, // 24 hours
+  buster: '',
+})
+
+// Wait for restoration to complete
+await restorePromise
+
+// Later, stop persisting
+unsubscribe()
+```
+
+## Core Functions
+
+### persistQueryClientRestore
+
+Restores persisted data to the QueryCache:
+
+```tsx
+import { persistQueryClientRestore } from '@tanstack/query-persist-client-core'
+
+await persistQueryClientRestore({
+  queryClient,
+  persister,
+  maxAge: 1000 * 60 * 60 * 24,
+  buster: '',
+  hydrateOptions: {},
+})
+```
+
+### persistQueryClientSave
+
+Persists the QueryCache to storage:
+
+```tsx
+import { persistQueryClientSave } from '@tanstack/query-persist-client-core'
+
+await persistQueryClientSave({
+  queryClient,
+  persister,
+  buster: '',
+  dehydrateOptions: {},
+})
+```
+
+### persistQueryClientSubscribe
+
+Subscribes to cache changes and automatically persists:
+
+```tsx
+import { persistQueryClientSubscribe } from '@tanstack/query-persist-client-core'
+
+const unsubscribe = persistQueryClientSubscribe({
+  queryClient,
+  persister,
+  buster: '',
+  dehydrateOptions: {},
+})
+
+// Stop listening to changes
+unsubscribe()
+```
+
+## Custom Persister
+
+You can create your own persister by implementing the `Persister` interface:
+
+```tsx
+import type { Persister, PersistedClient } from '@tanstack/query-persist-client-core'
+
+const customPersister: Persister = {
+  persistClient: async (client: PersistedClient) => {
+    // Save to your custom storage
+    await myCustomStorage.set('cache', client)
+  },
+  restoreClient: async () => {
+    // Restore from your custom storage
+    const client = await myCustomStorage.get('cache')
+    return client
+  },
+  removeClient: async () => {
+    // Remove from your custom storage
+    await myCustomStorage.remove('cache')
+  },
+}
+```
+
+## Important Considerations
+
+<Warning>
+  Make sure your `gcTime` (garbage collection time) is longer than your `maxAge`. Otherwise, queries might be garbage collected before being persisted.
+</Warning>
+
+<Info>
+  Only successful queries are persisted by default. You can customize this with `dehydrateOptions.shouldDehydrateQuery`.
+</Info>
+
+<Note>
+  The persister automatically handles cache eviction, expiration checks, and cache busting. Expired or busted caches are automatically removed.
+</Note>
+
+## Best Practices
+
+1. **Set appropriate gcTime**: Ensure queries stay in memory long enough to be persisted
+2. **Use cache busting**: Increment the buster string when you make breaking changes to your API
+3. **Handle errors gracefully**: The persister will catch and log errors, removing corrupted cache automatically
+4. **Throttle writes**: Use `throttleTime` to avoid excessive storage writes
+5. **Selective persistence**: Use `dehydrateOptions` to control which queries are persisted
+
+## Example: Offline Support
+
+```tsx
+import { QueryClient } from '@tanstack/react-query'
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      gcTime: 1000 * 60 * 60 * 24, // 24 hours
+      networkMode: 'offlineFirst', // Allow queries to work offline
+    },
+  },
+})
+
+const persister = createSyncStoragePersister({
+  storage: window.localStorage,
+})
+
+function App() {
+  return (
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ 
+        persister,
+        maxAge: 1000 * 60 * 60 * 24 * 7, // Keep cache for 7 days
+      }}
+    >
+      {/* Your offline-capable application */}
+    </PersistQueryClientProvider>
+  )
+}
+```

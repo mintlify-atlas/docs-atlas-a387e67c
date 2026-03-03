@@ -1,0 +1,392 @@
+---
+title: Disabling Queries
+description: Conditionally enable or disable queries based on application state and user interactions
+---
+
+The `enabled` option allows you to control when queries should run. This is essential for dependent queries, conditional data fetching, and preventing unnecessary network requests.
+
+## Basic Usage
+
+Disable a query with a boolean:
+
+```tsx
+function User({ userId }: { userId: number | null }) {
+  const { data, fetchStatus } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId!),
+    enabled: !!userId, // Only fetch when userId exists
+  })
+
+  if (!userId) return <div>Select a user</div>
+  return <div>{data?.name}</div>
+}
+```
+
+When a query is disabled:
+- `status` will be `pending`
+- `fetchStatus` will be `idle`
+- No network request is made
+- Query remains in the cache
+
+## Dependent Queries
+
+Fetch data that depends on previous query results:
+
+```tsx
+function UserPosts({ userId }: { userId: number }) {
+  // First query: Get user details
+  const { data: user } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  })
+
+  // Second query: Only fetch posts when we have the user's postIds
+  const { data: posts } = useQuery({
+    queryKey: ['posts', user?.postIds],
+    queryFn: () => fetchPosts(user!.postIds),
+    enabled: !!user?.postIds, // Wait for user data
+  })
+
+  return (
+    <div>
+      <h2>{user?.name}</h2>
+      {posts?.map(post => (
+        <div key={post.id}>{post.title}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+## Multiple Dependencies
+
+Wait for multiple conditions:
+
+```tsx
+function SearchResults({ userId, searchTerm }: {
+  userId: number | null
+  searchTerm: string
+}) {
+  const { data } = useQuery({
+    queryKey: ['search', userId, searchTerm],
+    queryFn: () => searchAPI(userId!, searchTerm),
+    // Only search when both userId exists AND searchTerm has 3+ characters
+    enabled: !!userId && searchTerm.length >= 3,
+  })
+
+  if (!userId) return <div>Please log in</div>
+  if (searchTerm.length < 3) return <div>Type at least 3 characters</div>
+  
+  return (
+    <ul>
+      {data?.map(result => (
+        <li key={result.id}>{result.title}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+## Lazy Queries
+
+Implement "fetch on demand" with manual enablement:
+
+```tsx
+function UserProfile({ userId }: { userId: number }) {
+  const [enableQuery, setEnableQuery] = useState(false)
+
+  const { data, isFetching } = useQuery({
+    queryKey: ['userDetails', userId],
+    queryFn: () => fetchUserDetails(userId),
+    enabled: enableQuery,
+  })
+
+  return (
+    <div>
+      <button 
+        onClick={() => setEnableQuery(true)}
+        disabled={enableQuery}
+      >
+        {isFetching ? 'Loading...' : 'Load Details'}
+      </button>
+      {data && <div>{JSON.stringify(data, null, 2)}</div>}
+    </div>
+  )
+}
+```
+
+## Disabling After Success
+
+Fetch once and never refetch:
+
+```tsx
+function InitialData() {
+  const [shouldFetch, setShouldFetch] = useState(true)
+
+  const { data } = useQuery({
+    queryKey: ['initialData'],
+    queryFn: async () => {
+      const result = await fetchInitialData()
+      setShouldFetch(false) // Disable after first successful fetch
+      return result
+    },
+    enabled: shouldFetch,
+    staleTime: Infinity, // Never refetch
+  })
+
+  return <div>{data?.value}</div>
+}
+```
+
+## Conditional Refetching
+
+Disable automatic refetching based on conditions:
+
+```tsx
+function Posts({ isEditMode }: { isEditMode: boolean }) {
+  const { data } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+    // Disable automatic refetching during edit mode
+    enabled: !isEditMode,
+    refetchOnWindowFocus: !isEditMode,
+    refetchOnReconnect: !isEditMode,
+  })
+
+  return (
+    <div>
+      {data?.map(post => (
+        <PostEditor key={post.id} post={post} editable={isEditMode} />
+      ))}
+    </div>
+  )
+}
+```
+
+## Feature Flags
+
+Conditionally fetch based on feature flags:
+
+```tsx
+function Dashboard({ features }: { features: FeatureFlags }) {
+  const analyticsQuery = useQuery({
+    queryKey: ['analytics'],
+    queryFn: fetchAnalytics,
+    enabled: features.analytics, // Only fetch if feature enabled
+  })
+
+  const reportsQuery = useQuery({
+    queryKey: ['reports'],
+    queryFn: fetchReports,
+    enabled: features.reports,
+  })
+
+  return (
+    <div>
+      {features.analytics && <AnalyticsPanel data={analyticsQuery.data} />}
+      {features.reports && <ReportsPanel data={reportsQuery.data} />}
+    </div>
+  )
+}
+```
+
+## Manual Refetch
+
+Disable automatic fetching but allow manual refetch:
+
+```tsx
+function ManualRefresh() {
+  const { data, refetch, isFetching } = useQuery({
+    queryKey: ['data'],
+    queryFn: fetchData,
+    enabled: false, // Never fetch automatically
+  })
+
+  return (
+    <div>
+      <button onClick={() => refetch()} disabled={isFetching}>
+        {isFetching ? 'Refreshing...' : 'Refresh Data'}
+      </button>
+      {data && <div>{data.value}</div>}
+    </div>
+  )
+}
+```
+
+## User Preferences
+
+Respect user settings for data fetching:
+
+```tsx
+function Feed({ userSettings }: { userSettings: Settings }) {
+  const { data } = useQuery({
+    queryKey: ['feed'],
+    queryFn: fetchFeed,
+    // Respect user's auto-refresh preference
+    enabled: userSettings.autoRefresh,
+    refetchInterval: userSettings.autoRefresh ? 30000 : false,
+  })
+
+  return <div>{/* Feed content */}</div>
+}
+```
+
+## Authentication Gates
+
+Only fetch when user is authenticated:
+
+```tsx
+function PrivateData({ user }: { user: User | null }) {
+  const { data } = useQuery({
+    queryKey: ['privateData'],
+    queryFn: fetchPrivateData,
+    enabled: !!user?.isAuthenticated,
+  })
+
+  if (!user?.isAuthenticated) {
+    return <div>Please log in to view this data</div>
+  }
+
+  return <div>{data?.secretValue}</div>
+}
+```
+
+## Permission-Based Fetching
+
+```tsx
+function AdminPanel({ user }: { user: User }) {
+  const { data: adminData } = useQuery({
+    queryKey: ['adminData'],
+    queryFn: fetchAdminData,
+    enabled: user.role === 'admin',
+  })
+
+  const { data: moderatorData } = useQuery({
+    queryKey: ['moderatorData'],
+    queryFn: fetchModeratorData,
+    enabled: user.role === 'admin' || user.role === 'moderator',
+  })
+
+  return (
+    <div>
+      {user.role === 'admin' && <AdminSection data={adminData} />}
+      {(user.role === 'admin' || user.role === 'moderator') && (
+        <ModeratorSection data={moderatorData} />
+      )}
+    </div>
+  )
+}
+```
+
+## Dynamic Enabled State
+
+```tsx
+function SmartFetch() {
+  const [params, setParams] = useState({ id: null, category: null })
+
+  const { data, fetchStatus } = useQuery({
+    queryKey: ['items', params],
+    queryFn: () => fetchItems(params),
+    enabled: (() => {
+      // Complex logic to determine if query should run
+      if (!params.id) return false
+      if (params.category === 'disabled') return false
+      return true
+    })(),
+  })
+
+  return (
+    <div>
+      <div>Fetch Status: {fetchStatus}</div>
+      {data && <div>{JSON.stringify(data)}</div>}
+    </div>
+  )
+}
+```
+
+<Warning>
+**Avoid Disabling During Loading**
+
+Don't disable a query while it's fetching:
+
+```tsx
+// Bad: Race condition
+const { data, isFetching } = useQuery({
+  queryKey: ['data'],
+  queryFn: fetchData,
+  enabled: !isFetching, // Don't do this!
+})
+
+// Good: Let the query complete naturally
+const { data } = useQuery({
+  queryKey: ['data'],
+  queryFn: fetchData,
+})
+```
+
+Disabling a query while it's fetching can lead to unexpected behavior and race conditions.
+</Warning>
+
+## fetchStatus vs status
+
+Understand the difference when working with disabled queries:
+
+```tsx
+const { status, fetchStatus, data } = useQuery({
+  queryKey: ['data'],
+  queryFn: fetchData,
+  enabled: false,
+})
+
+console.log(status)      // 'pending' (no data yet)
+console.log(fetchStatus) // 'idle' (not fetching because disabled)
+console.log(data)        // undefined
+```
+
+| State | `enabled: true` | `enabled: false` |
+|-------|----------------|------------------|
+| Initial | `status: pending`<br/>`fetchStatus: fetching` | `status: pending`<br/>`fetchStatus: idle` |
+| Has Data | `status: success`<br/>`fetchStatus: idle` | `status: success`<br/>`fetchStatus: idle` |
+| Refetching | `status: success`<br/>`fetchStatus: fetching` | `status: success`<br/>`fetchStatus: idle` |
+
+## Re-enabling Queries
+
+When a disabled query is re-enabled:
+
+```tsx
+function Toggle() {
+  const [enabled, setEnabled] = useState(false)
+
+  const { data, isFetching } = useQuery({
+    queryKey: ['data'],
+    queryFn: fetchData,
+    enabled,
+  })
+
+  // When enabled changes from false to true:
+  // 1. Query immediately starts fetching (if stale or no data)
+  // 2. isFetching becomes true
+  // 3. Data populates when fetch completes
+
+  return (
+    <div>
+      <button onClick={() => setEnabled(e => !e)}>
+        {enabled ? 'Disable' : 'Enable'}
+      </button>
+      {isFetching && <div>Loading...</div>}
+      {data && <div>{data.value}</div>}
+    </div>
+  )
+}
+```
+
+## Best Practices
+
+1. **Use for dependent queries** - Wait for required data before fetching
+2. **Validate input** - Don't fetch with invalid parameters
+3. **Respect permissions** - Only fetch data users are allowed to see
+4. **Lazy loading** - Implement "load more" or expandable sections
+5. **Feature flags** - Conditionally fetch based on enabled features
+6. **Manual control** - Give users control over when to fetch
+7. **Avoid race conditions** - Don't disable queries mid-flight
+8. **Check `fetchStatus`** - Use `fetchStatus === 'idle'` to detect disabled queries

@@ -1,0 +1,554 @@
+---
+title: Svelte Query
+description: Reactive stores for fetching, caching and updating asynchronous data in Svelte applications
+---
+
+# Svelte Query
+
+TanStack Svelte Query provides reactive stores for managing server state in Svelte applications. It leverages Svelte's reactivity system with runes and stores for automatic updates and optimal performance.
+
+## Installation
+
+```bash
+npm install @tanstack/svelte-query
+# or
+pnpm add @tanstack/svelte-query
+# or
+yarn add @tanstack/svelte-query
+```
+
+## Quick Start
+
+Wrap your application with `QueryClientProvider`:
+
+```svelte
+<script lang="ts">
+  import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query'
+
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        gcTime: 1000 * 60 * 60 * 24, // 24 hours
+      },
+    },
+  })
+</script>
+
+<QueryClientProvider client={queryClient}>
+  <YourApp />
+</QueryClientProvider>
+```
+
+### With SvelteKit
+
+For SvelteKit, use the layout file:
+
+```svelte
+<!-- src/routes/+layout.svelte -->
+<script lang="ts">
+  import { browser } from '$app/environment'
+  import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query'
+
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        enabled: browser,
+      },
+    },
+  })
+
+  const { children } = $props()
+</script>
+
+<QueryClientProvider client={queryClient}>
+  <main>
+    {@render children()}
+  </main>
+</QueryClientProvider>
+```
+
+## Core Functions
+
+### createQuery
+
+Create a reactive query store:
+
+```svelte
+<script lang="ts">
+  import { createQuery } from '@tanstack/svelte-query'
+
+  type Post = {
+    id: number
+    title: string
+    body: string
+  }
+
+  const posts = createQuery<Post[], Error>({
+    queryKey: ['posts'],
+    queryFn: async () => {
+      const response = await fetch('https://api.example.com/posts')
+      return await response.json()
+    },
+  })
+</script>
+
+<div>
+  {#if $posts.isPending}
+    <span>Loading...</span>
+  {:else if $posts.error}
+    <span>Error: {$posts.error.message}</span>
+  {:else if $posts.data}
+    <ul>
+      {#each $posts.data as post}
+        <li>{post.title}</li>
+      {/each}
+    </ul>
+    {#if $posts.isFetching}
+      <div>Background Updating...</div>
+    {/if}
+  {/if}
+</div>
+```
+
+### With Runes (Svelte 5)
+
+Use the runes syntax for modern Svelte:
+
+```svelte
+<script lang="ts">
+  import { createQuery } from '@tanstack/svelte-query'
+
+  const posts = createQuery(() => ({
+    queryKey: ['posts'],
+    queryFn: async () => {
+      const res = await fetch('https://api.example.com/posts')
+      return res.json()
+    },
+  }))
+</script>
+
+<div>
+  {#if posts.status === 'pending'}
+    <span>Loading...</span>
+  {:else if posts.status === 'error'}
+    <span>Error: {posts.error.message}</span>
+  {:else}
+    <ul>
+      {#each posts.data as post}
+        <li>{post.title}</li>
+      {/each}
+    </ul>
+  {/if}
+</div>
+```
+
+### Reactive Query Keys
+
+Query keys automatically react to prop changes:
+
+```svelte
+<script lang="ts">
+  import { createQuery } from '@tanstack/svelte-query'
+  import { getPostById } from './data'
+  import type { Post } from './types'
+
+  const { postId }: { postId: number } = $props()
+
+  const post = createQuery<Post>(() => ({
+    queryKey: ['post', postId],
+    queryFn: () => getPostById(postId),
+  }))
+</script>
+
+<div>
+  {#if !postId || post.isPending}
+    <span>Loading...</span>
+  {/if}
+  {#if post.error}
+    <span>Error: {post.error.message}</span>
+  {/if}
+  {#if post.isSuccess}
+    <h1>{post.data.title}</h1>
+    <p>{post.data.body}</p>
+  {/if}
+</div>
+```
+
+### createMutation
+
+Perform mutations with reactive state:
+
+```svelte
+<script lang="ts">
+  import { createMutation, useQueryClient } from '@tanstack/svelte-query'
+
+  const client = useQueryClient()
+
+  const mutation = createMutation({
+    mutationFn: async (newPost: { title: string; body: string }) => {
+      const response = await fetch('https://api.example.com/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPost),
+      })
+      return response.json()
+    },
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['posts'] })
+    },
+  })
+
+  const handleCreate = () => {
+    $mutation.mutate({ title: 'New Post', body: 'Content' })
+  }
+</script>
+
+<button on:click={handleCreate} disabled={$mutation.isPending}>
+  {$mutation.isPending ? 'Creating...' : 'Create Post'}
+</button>
+
+{#if $mutation.isError}
+  <div>Error: {$mutation.error.message}</div>
+{/if}
+{#if $mutation.isSuccess}
+  <div>Post created!</div>
+{/if}
+```
+
+### createInfiniteQuery
+
+Implement infinite scrolling:
+
+```svelte
+<script lang="ts">
+  import { createInfiniteQuery } from '@tanstack/svelte-query'
+
+  const posts = createInfiniteQuery({
+    queryKey: ['posts'],
+    queryFn: async ({ pageParam = 0 }) => {
+      const res = await fetch(`/api/posts?cursor=${pageParam}`)
+      return res.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+
+  const loadMore = () => {
+    $posts.fetchNextPage()
+  }
+</script>
+
+<div>
+  {#if $posts.isPending}
+    <div>Loading...</div>
+  {:else}
+    {#each $posts.data.pages as page}
+      {#each page.posts as post}
+        <div>{post.title}</div>
+      {/each}
+    {/each}
+    <button
+      on:click={loadMore}
+      disabled={!$posts.hasNextPage || $posts.isFetchingNextPage}
+    >
+      {$posts.isFetchingNextPage ? 'Loading...' : 'Load More'}
+    </button>
+  {/if}
+</div>
+```
+
+### createQueries
+
+Execute multiple queries in parallel:
+
+```svelte
+<script lang="ts">
+  import { createQueries } from '@tanstack/svelte-query'
+
+  const userIds = [1, 2, 3]
+
+  const results = createQueries({
+    queries: userIds.map((id) => ({
+      queryKey: ['user', id],
+      queryFn: () => fetchUser(id),
+    })),
+  })
+</script>
+
+<div>
+  {#each $results as result, i}
+    <div>
+      {#if result.isPending}
+        Loading...
+      {:else if result.data}
+        {result.data.name}
+      {/if}
+    </div>
+  {/each}
+</div>
+```
+
+## Svelte-Specific Features
+
+### Store Subscriptions
+
+Query results are Svelte stores and can be subscribed to:
+
+```svelte
+<script lang="ts">
+  import { createQuery } from '@tanstack/svelte-query'
+
+  const posts = createQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  // Access via $ prefix
+  $: data = $posts.data
+  $: isPending = $posts.isPending
+</script>
+```
+
+### useQueryClient
+
+Access the QueryClient for manual operations:
+
+```svelte
+<script lang="ts">
+  import { useQueryClient } from '@tanstack/svelte-query'
+
+  const client = useQueryClient()
+
+  const prefetchPost = (id: number) => {
+    client.prefetchQuery({
+      queryKey: ['post', id],
+      queryFn: () => fetchPost(id),
+    })
+  }
+</script>
+
+<a href="/post/1" on:mouseenter={() => prefetchPost(1)}>
+  Hover to prefetch
+</a>
+```
+
+### HydrationBoundary
+
+Hydrate server-rendered queries:
+
+```svelte
+<script lang="ts">
+  import { HydrationBoundary } from '@tanstack/svelte-query'
+
+  export let dehydratedState
+</script>
+
+<HydrationBoundary state={dehydratedState}>
+  <Posts />
+</HydrationBoundary>
+```
+
+## Helper Functions
+
+### queryOptions
+
+Create reusable query options:
+
+```ts
+import { queryOptions } from '@tanstack/svelte-query'
+
+export const postQueryOptions = (id: number) => queryOptions({
+  queryKey: ['post', id],
+  queryFn: () => fetchPost(id),
+})
+```
+
+```svelte
+<script lang="ts">
+  import { createQuery } from '@tanstack/svelte-query'
+  import { postQueryOptions } from './queries'
+
+  const { postId } = $props()
+  const post = createQuery(postQueryOptions(postId))
+</script>
+```
+
+### infiniteQueryOptions
+
+Create type-safe infinite query options:
+
+```ts
+import { infiniteQueryOptions } from '@tanstack/svelte-query'
+
+export const postsInfiniteOptions = infiniteQueryOptions({
+  queryKey: ['posts'],
+  queryFn: ({ pageParam = 0 }) => fetchPosts(pageParam),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
+```
+
+## State Tracking
+
+### useIsFetching
+
+Track global fetching state:
+
+```svelte
+<script lang="ts">
+  import { useIsFetching } from '@tanstack/svelte-query'
+
+  const isFetching = useIsFetching()
+</script>
+
+{#if $isFetching > 0}
+  <div>Queries running: {$isFetching}</div>
+{/if}
+```
+
+### useIsMutating
+
+Track global mutation state:
+
+```svelte
+<script lang="ts">
+  import { useIsMutating } from '@tanstack/svelte-query'
+
+  const isMutating = useIsMutating()
+</script>
+
+{#if $isMutating > 0}
+  <div>Mutations running: {$isMutating}</div>
+{/if}
+```
+
+### useMutationState
+
+Access all mutation states:
+
+```svelte
+<script lang="ts">
+  import { useMutationState } from '@tanstack/svelte-query'
+
+  const pendingMutations = useMutationState({
+    filters: { status: 'pending' },
+    select: (mutation) => mutation.state.variables,
+  })
+</script>
+
+<div>Pending: {$pendingMutations.length}</div>
+```
+
+## SSR Support
+
+### useHydrate
+
+Hydrate client with server data:
+
+```svelte
+<script lang="ts">
+  import { useHydrate } from '@tanstack/svelte-query'
+
+  export let data
+
+  useHydrate(data.dehydratedState)
+</script>
+```
+
+### useIsRestoring
+
+Check if queries are being restored:
+
+```svelte
+<script lang="ts">
+  import { useIsRestoring } from '@tanstack/svelte-query'
+
+  const isRestoring = useIsRestoring()
+</script>
+
+{#if $isRestoring}
+  <div>Restoring queries...</div>
+{/if}
+```
+
+## Persistence
+
+Persist queries to localStorage with SvelteKit:
+
+```svelte
+<script lang="ts">
+  import { browser } from '$app/environment'
+  import { QueryClient } from '@tanstack/svelte-query'
+  import { PersistQueryClientProvider } from '@tanstack/svelte-query-persist-client'
+  import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister'
+
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        enabled: browser,
+      },
+    },
+  })
+
+  const persister = createAsyncStoragePersister({
+    storage: browser ? window.localStorage : null,
+  })
+</script>
+
+<PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}>
+  <main>
+    {@render children()}
+  </main>
+</PersistQueryClientProvider>
+```
+
+## Devtools
+
+Install the devtools for debugging:
+
+```bash
+npm install @tanstack/svelte-query-devtools
+```
+
+```svelte
+<script lang="ts">
+  import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools'
+  import { QueryClientProvider } from '@tanstack/svelte-query'
+</script>
+
+<QueryClientProvider client={queryClient}>
+  <YourApp />
+  <SvelteQueryDevtools />
+</QueryClientProvider>
+```
+
+## TypeScript Support
+
+Svelte Query provides full type inference:
+
+```ts
+type Post = { id: number; title: string; body: string }
+type PostError = { message: string }
+
+const post = createQuery<Post, PostError>({
+  queryKey: ['post', 1],
+  queryFn: fetchPost,
+})
+// $post.data is Post | undefined
+// $post.error is PostError | null
+```
+
+## Best Practices
+
+- Use the `$` prefix to subscribe to query stores
+- Wrap options in functions for reactive query keys (runes mode)
+- Leverage `enabled: browser` for SvelteKit SSR
+- Use `queryOptions` for reusable configurations
+- Enable persistence for better UX
+- Use SvelteKit's load functions with TanStack Query
+- Implement proper error handling with `{#if}` blocks
+
+## Related Packages
+
+- `@tanstack/svelte-query-devtools` - Developer tools
+- `@tanstack/svelte-query-persist-client` - Persist cache to storage

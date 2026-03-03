@@ -1,0 +1,540 @@
+---
+title: Testing
+description: Testing strategies and utilities for TanStack Query applications
+---
+
+## Overview
+
+Testing components that use TanStack Query requires setting up a QueryClient and provider. This guide covers testing strategies, utilities, and best practices for unit and integration tests.
+
+## Basic Test Setup
+
+### Creating a Test QueryClient
+
+Create a new QueryClient for each test to ensure isolation:
+
+```tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { renderHook, waitFor } from '@testing-library/react'
+
+const createTestQueryClient = () =>
+  new QueryClient({
+    defaultOptions: {
+      queries: {
+        // Turn off retries to avoid test timeout issues
+        retry: false,
+        // Turn off caching to ensure fresh data each test
+        gcTime: 0,
+      },
+    },
+  })
+
+function createWrapper() {
+  const queryClient = createTestQueryClient()
+  return ({ children }) => (
+    <QueryClientProvider client={queryClient}>
+      {children}
+    </QueryClientProvider>
+  )
+}
+```
+
+## Testing Hooks
+
+### Testing useQuery
+
+```tsx
+import { renderHook, waitFor } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { useQuery } from '@tanstack/react-query'
+
+function usePosts() {
+  return useQuery({
+    queryKey: ['posts'],
+    queryFn: async () => {
+      const response = await fetch('/api/posts')
+      return response.json()
+    },
+  })
+}
+
+describe('usePosts', () => {
+  it('should fetch posts successfully', async () => {
+    const mockPosts = [{ id: 1, title: 'Test Post' }]
+    
+    global.fetch = vi.fn(() =>
+      Promise.resolve({
+        json: () => Promise.resolve(mockPosts),
+      })
+    )
+
+    const { result } = renderHook(() => usePosts(), {
+      wrapper: createWrapper(),
+    })
+
+    // Initially pending
+    expect(result.current.isPending).toBe(true)
+
+    // Wait for success
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(result.current.data).toEqual(mockPosts)
+  })
+
+  it('should handle errors', async () => {
+    global.fetch = vi.fn(() =>
+      Promise.reject(new Error('Failed to fetch'))
+    )
+
+    const { result } = renderHook(() => usePosts(), {
+      wrapper: createWrapper(),
+    })
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    expect(result.current.error).toEqual(new Error('Failed to fetch'))
+  })
+})
+```
+
+### Testing useMutation
+
+```tsx
+import { renderHook, waitFor } from '@testing-library/react'
+import { useMutation } from '@tanstack/react-query'
+import { act } from 'react'
+
+function useCreatePost() {
+  return useMutation({
+    mutationFn: async (newPost) => {
+      const response = await fetch('/api/posts', {
+        method: 'POST',
+        body: JSON.stringify(newPost),
+      })
+      return response.json()
+    },
+  })
+}
+
+describe('useCreatePost', () => {
+  it('should create a post', async () => {
+    const newPost = { title: 'New Post' }
+    const createdPost = { id: 1, ...newPost }
+
+    global.fetch = vi.fn(() =>
+      Promise.resolve({
+        json: () => Promise.resolve(createdPost),
+      })
+    )
+
+    const { result } = renderHook(() => useCreatePost(), {
+      wrapper: createWrapper(),
+    })
+
+    act(() => {
+      result.current.mutate(newPost)
+    })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(result.current.data).toEqual(createdPost)
+  })
+})
+```
+
+## Testing Components
+
+### Component with useQuery
+
+```tsx
+import { render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+
+function PostList() {
+  const { data, isPending, error } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  if (isPending) return <div>Loading...</div>
+  if (error) return <div>Error: {error.message}</div>
+
+  return (
+    <ul>
+      {data.map((post) => (
+        <li key={post.id}>{post.title}</li>
+      ))}
+    </ul>
+  )
+}
+
+describe('PostList', () => {
+  it('renders posts', async () => {
+    const mockPosts = [
+      { id: 1, title: 'Post 1' },
+      { id: 2, title: 'Post 2' },
+    ]
+
+    global.fetch = vi.fn(() =>
+      Promise.resolve({
+        json: () => Promise.resolve(mockPosts),
+      })
+    )
+
+    const queryClient = createTestQueryClient()
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PostList />
+      </QueryClientProvider>
+    )
+
+    expect(screen.getByText('Loading...')).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(screen.getByText('Post 1')).toBeInTheDocument()
+    })
+
+    expect(screen.getByText('Post 2')).toBeInTheDocument()
+  })
+})
+```
+
+## Mocking Network Requests
+
+### Using MSW (Mock Service Worker)
+
+```tsx
+import { rest } from 'msw'
+import { setupServer } from 'msw/node'
+import { afterAll, afterEach, beforeAll } from 'vitest'
+
+const posts = [
+  { id: 1, title: 'First Post' },
+  { id: 2, title: 'Second Post' },
+]
+
+const server = setupServer(
+  rest.get('/api/posts', (req, res, ctx) => {
+    return res(ctx.json(posts))
+  }),
+  rest.post('/api/posts', async (req, res, ctx) => {
+    const newPost = await req.json()
+    return res(ctx.json({ id: 3, ...newPost }))
+  })
+)
+
+beforeAll(() => server.listen())
+afterEach(() => server.resetHandlers())
+afterAll(() => server.close())
+
+describe('Posts with MSW', () => {
+  it('fetches posts from API', async () => {
+    const { result } = renderHook(() => usePosts(), {
+      wrapper: createWrapper(),
+    })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(result.current.data).toEqual(posts)
+  })
+
+  it('handles API errors', async () => {
+    // Override default handler for this test
+    server.use(
+      rest.get('/api/posts', (req, res, ctx) => {
+        return res(ctx.status(500), ctx.json({ error: 'Server error' }))
+      })
+    )
+
+    const { result } = renderHook(() => usePosts(), {
+      wrapper: createWrapper(),
+    })
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+  })
+})
+```
+
+## Testing with Initial Data
+
+### Prefetch Data
+
+```tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+it('renders with prefetched data', async () => {
+  const queryClient = createTestQueryClient()
+  const mockPosts = [{ id: 1, title: 'Test Post' }]
+
+  // Prefetch data
+  queryClient.setQueryData(['posts'], mockPosts)
+
+  render(
+    <QueryClientProvider client={queryClient}>
+      <PostList />
+    </QueryClientProvider>
+  )
+
+  // Should render immediately without loading state
+  expect(screen.getByText('Test Post')).toBeInTheDocument()
+})
+```
+
+## Testing Server-Side Rendering
+
+```tsx
+import { renderToString } from 'react-dom/server'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+
+function Page() {
+  const query = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  return <div>status {query.status}</div>
+}
+
+describe('SSR', () => {
+  it('should not trigger fetch on server', () => {
+    const queryClient = new QueryClient()
+    const queryFn = vi.fn()
+
+    const markup = renderToString(
+      <QueryClientProvider client={queryClient}>
+        <Page />
+      </QueryClientProvider>
+    )
+
+    // Should render pending state
+    expect(markup).toContain('status pending')
+    
+    // Should NOT call query function
+    expect(queryFn).not.toHaveBeenCalled()
+  })
+
+  it('should use prefetched data', async () => {
+    const queryClient = new QueryClient()
+    const mockPosts = [{ id: 1, title: 'Post' }]
+
+    // Prefetch on server
+    await queryClient.prefetchQuery({
+      queryKey: ['posts'],
+      queryFn: () => Promise.resolve(mockPosts),
+    })
+
+    const markup = renderToString(
+      <QueryClientProvider client={queryClient}>
+        <Page />
+      </QueryClientProvider>
+    )
+
+    expect(markup).toContain('status success')
+  })
+})
+```
+
+## Testing Utilities
+
+### Custom Render Function
+
+Create a reusable render function:
+
+```tsx
+import { render } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+function renderWithClient(ui: React.ReactElement, client?: QueryClient) {
+  const queryClient = client || createTestQueryClient()
+
+  return {
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        {ui}
+      </QueryClientProvider>
+    ),
+    queryClient,
+  }
+}
+
+// Usage
+const { queryClient } = renderWithClient(<PostList />)
+```
+
+### Waiting for Queries
+
+Wait for specific query states:
+
+```tsx
+import { waitFor } from '@testing-library/react'
+
+async function waitForQuerySuccess(queryClient, queryKey) {
+  await waitFor(() => {
+    const query = queryClient.getQueryCache().find({ queryKey })
+    expect(query?.state.status).toBe('success')
+  })
+}
+
+// Usage
+const { queryClient } = renderWithClient(<PostList />)
+await waitForQuerySuccess(queryClient, ['posts'])
+```
+
+## Testing Mutations with Side Effects
+
+```tsx
+import { renderHook, waitFor } from '@testing-library/react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { act } from 'react'
+
+function useUpdatePost() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: updatePost,
+    onSuccess: (data) => {
+      // Invalidate related queries
+      queryClient.invalidateQueries({ queryKey: ['posts'] })
+      queryClient.setQueryData(['posts', data.id], data)
+    },
+  })
+}
+
+describe('useUpdatePost', () => {
+  it('invalidates queries on success', async () => {
+    const queryClient = createTestQueryClient()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    const wrapper = ({ children }) => (
+      <QueryClientProvider client={queryClient}>
+        {children}
+      </QueryClientProvider>
+    )
+
+    const { result } = renderHook(() => useUpdatePost(), { wrapper })
+
+    const updatedPost = { id: 1, title: 'Updated' }
+    global.fetch = vi.fn(() =>
+      Promise.resolve({ json: () => Promise.resolve(updatedPost) })
+    )
+
+    act(() => {
+      result.current.mutate(updatedPost)
+    })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['posts'] })
+    expect(queryClient.getQueryData(['posts', 1])).toEqual(updatedPost)
+  })
+})
+```
+
+## Testing Error Boundaries
+
+```tsx
+import { QueryErrorResetBoundary } from '@tanstack/react-query'
+import { ErrorBoundary } from 'react-error-boundary'
+
+function ErrorFallback({ error, resetErrorBoundary }) {
+  return (
+    <div>
+      <p>Error: {error.message}</p>
+      <button onClick={resetErrorBoundary}>Try again</button>
+    </div>
+  )
+}
+
+describe('Error Boundary', () => {
+  it('catches query errors', async () => {
+    global.fetch = vi.fn(() => Promise.reject(new Error('API Error')))
+
+    const queryClient = createTestQueryClient()
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <QueryErrorResetBoundary>
+          {({ reset }) => (
+            <ErrorBoundary onReset={reset} FallbackComponent={ErrorFallback}>
+              <PostList />
+            </ErrorBoundary>
+          )}
+        </QueryErrorResetBoundary>
+      </QueryClientProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Error: API Error')).toBeInTheDocument()
+    })
+  })
+})
+```
+
+## Testing Network Mode
+
+```tsx
+import { onlineManager } from '@tanstack/react-query'
+
+describe('Network Mode', () => {
+  it('pauses queries when offline', async () => {
+    // Set offline
+    onlineManager.setOnline(false)
+
+    const { result } = renderHook(() => usePosts(), {
+      wrapper: createWrapper(),
+    })
+
+    // Should be paused
+    expect(result.current.fetchStatus).toBe('paused')
+
+    // Set online
+    act(() => {
+      onlineManager.setOnline(true)
+    })
+
+    // Should resume
+    await waitFor(() => {
+      expect(result.current.fetchStatus).toBe('fetching')
+    })
+  })
+})
+```
+
+## Best Practices
+
+1. **Create new QueryClient per test** - Ensure test isolation
+2. **Disable retries** - Prevent timeout issues in tests
+3. **Use waitFor** - Don't rely on arbitrary timeouts
+4. **Mock network requests** - Use MSW or vi.fn() for predictable tests
+5. **Test error states** - Ensure error handling works
+6. **Test loading states** - Verify UI during data fetching
+7. **Test side effects** - Verify mutations update cache correctly
+8. **Use act()** - Wrap state updates in act() to avoid warnings
+9. **Clean up** - Reset handlers and clear caches between tests
+10. **Test SSR scenarios** - Verify server-side behavior
+
+## TypeScript Testing
+
+```tsx
+import type { UseQueryResult } from '@tanstack/react-query'
+
+function usePosts(): UseQueryResult<Post[], Error> {
+  return useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+}
+
+// Type-safe testing
+it('returns correct types', async () => {
+  const { result } = renderHook(() => usePosts(), {
+    wrapper: createWrapper(),
+  })
+
+  await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+  // TypeScript knows data is Post[]
+  expect(result.current.data?.[0].title).toBe('Test Post')
+})
+```

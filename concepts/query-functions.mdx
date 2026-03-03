@@ -1,0 +1,540 @@
+---
+title: Query Functions
+description: Learn how to write query functions, handle errors, work with the AbortSignal, and return data correctly in TanStack Query
+---
+
+## Overview
+
+A query function is any function that returns a Promise. The Promise should either resolve with data or throw an error.
+
+## Basic Query Function
+
+The simplest query function:
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: async () => {
+    const response = await fetch('https://api.example.com/posts')
+    if (!response.ok) {
+      throw new Error('Network response was not ok')
+    }
+    return response.json()
+  },
+})
+```
+
+## Query Function Context
+
+Query functions receive a `QueryFunctionContext` object with useful properties:
+
+```tsx
+interface QueryFunctionContext<TQueryKey extends QueryKey = QueryKey> {
+  queryKey: TQueryKey       // The query key
+  signal: AbortSignal       // AbortSignal for cancellation
+  meta: QueryMeta | undefined  // Optional metadata
+  client: QueryClient       // The QueryClient instance
+  pageParam?: unknown       // For infinite queries
+}
+```
+
+### Accessing the Query Key
+
+Use destructuring to access query key values:
+
+```tsx
+function usePost(postId: number) {
+  return useQuery({
+    queryKey: ['post', postId],
+    queryFn: async ({ queryKey }) => {
+      // queryKey is ['post', postId]
+      const [, id] = queryKey
+      const response = await fetch(`/api/posts/${id}`)
+      return response.json()
+    },
+  })
+}
+```
+
+This pattern allows the query function to access dynamic values without creating closures:
+
+```tsx
+// Extract query function for reusability
+const fetchPost = async ({ queryKey }: QueryFunctionContext) => {
+  const [, postId] = queryKey
+  const response = await fetch(`/api/posts/${postId}`)
+  return response.json()
+}
+
+// Use in multiple places
+const { data } = useQuery({
+  queryKey: ['post', postId],
+  queryFn: fetchPost,
+})
+```
+
+### Using the AbortSignal
+
+The `signal` property allows you to cancel in-flight requests:
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: async ({ signal }) => {
+    const response = await fetch('/api/posts', { signal })
+    return response.json()
+  },
+})
+```
+
+When a query becomes unused before the request completes, TanStack Query will abort the request:
+
+```tsx
+// More complex example with axios
+import axios from 'axios'
+
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: async ({ signal }) => {
+    const { data } = await axios.get('/api/posts', {
+      signal,  // axios supports AbortSignal
+    })
+    return data
+  },
+})
+```
+
+<Note>
+  **AbortSignal consumption tracking**: TanStack Query tracks whether you accessed the `signal` property. If you did, and the query becomes unused, the request will be aborted and state reverted. If you didn't access it, the request continues to completion for caching.
+</Note>
+
+### Query Metadata
+
+Access optional metadata passed in query options:
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: async ({ meta }) => {
+    console.log('Query meta:', meta)
+    return fetchPosts()
+  },
+  meta: {
+    requestType: 'background',
+    priority: 'low',
+  },
+})
+```
+
+## Error Handling
+
+### Throwing Errors
+
+Query functions should throw errors when something goes wrong:
+
+```tsx
+const { data, error } = useQuery({
+  queryKey: ['post', postId],
+  queryFn: async () => {
+    const response = await fetch(`/api/posts/${postId}`)
+    
+    // Throw for non-2xx status codes
+    if (!response.ok) {
+      throw new Error(`Failed to fetch post: ${response.status}`)
+    }
+    
+    const data = await response.json()
+    
+    // Throw for invalid data
+    if (!data || !data.id) {
+      throw new Error('Invalid post data received')
+    }
+    
+    return data
+  },
+})
+
+if (error) {
+  return <div>Error: {error.message}</div>
+}
+```
+
+### Custom Error Classes
+
+Define custom error types for better error handling:
+
+```tsx
+class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public code?: string,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
+const { data, error } = useQuery({
+  queryKey: ['posts'],
+  queryFn: async () => {
+    const response = await fetch('/api/posts')
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new ApiError(
+        errorData.message || 'Request failed',
+        response.status,
+        errorData.code,
+      )
+    }
+    
+    return response.json()
+  },
+})
+
+if (error instanceof ApiError) {
+  if (error.status === 404) {
+    return <NotFound />
+  }
+  if (error.status === 401) {
+    return <Unauthorized />
+  }
+}
+```
+
+### Error Boundaries
+
+Combine with React Error Boundaries using `throwOnError`:
+
+```tsx
+// This will throw errors to the nearest error boundary
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  throwOnError: true,
+})
+
+// Or conditionally throw
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  throwOnError: (error) => error.status >= 500,
+})
+```
+
+## Return Values
+
+### Must Return Data
+
+Query functions must always return data or throw an error:
+
+```tsx
+// Good: Returns data
+queryFn: async () => {
+  const response = await fetch('/api/posts')
+  return response.json()
+}
+
+// Bad: Returns undefined
+queryFn: async () => {
+  const response = await fetch('/api/posts')
+  const data = await response.json()
+  // Implicit return undefined - ERROR!
+}
+
+// Good: Explicitly return data
+queryFn: async () => {
+  const response = await fetch('/api/posts')
+  const data = await response.json()
+  return data  // Explicit return
+}
+```
+
+<Note>
+  **Undefined is not allowed**: Query functions that return `undefined` will cause an error. If you need to represent "no data", use `null` or an empty array/object.
+</Note>
+
+### Type Safety
+
+Specify return types for type safety:
+
+```tsx
+interface Post {
+  id: number
+  title: string
+  body: string
+}
+
+const fetchPost = async ({ queryKey }: QueryFunctionContext): Promise<Post> => {
+  const [, postId] = queryKey as [string, number]
+  const response = await fetch(`/api/posts/${postId}`)
+  return response.json()
+}
+
+const { data } = useQuery({
+  queryKey: ['post', postId],
+  queryFn: fetchPost,
+})
+// data is typed as Post | undefined
+```
+
+## Common Patterns
+
+### Fetch Wrapper
+
+Create a reusable fetch wrapper:
+
+```tsx
+class FetchError extends Error {
+  constructor(
+    message: string,
+    public response: Response,
+    public data?: any,
+  ) {
+    super(message)
+    this.name = 'FetchError'
+  }
+}
+
+async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(url, options)
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new FetchError(
+      errorData.message || `HTTP ${response.status}`,
+      response,
+      errorData,
+    )
+  }
+  
+  return response.json()
+}
+
+// Usage
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: () => fetchJson<Post[]>('/api/posts'),
+})
+```
+
+### Axios Integration
+
+```tsx
+import axios from 'axios'
+
+const api = axios.create({
+  baseURL: 'https://api.example.com',
+})
+
+// Add response interceptor for error handling
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Handle unauthorized
+    }
+    return Promise.reject(error)
+  },
+)
+
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: async ({ signal }) => {
+    const { data } = await api.get('/posts', { signal })
+    return data
+  },
+})
+```
+
+### GraphQL
+
+```tsx
+import { request, gql } from 'graphql-request'
+
+const endpoint = 'https://api.example.com/graphql'
+
+const POSTS_QUERY = gql`
+  query GetPosts($limit: Int!) {
+    posts(limit: $limit) {
+      id
+      title
+      body
+    }
+  }
+`
+
+const { data } = useQuery({
+  queryKey: ['posts', { limit: 10 }],
+  queryFn: async ({ queryKey }) => {
+    const [, variables] = queryKey
+    return request(endpoint, POSTS_QUERY, variables)
+  },
+})
+```
+
+### Parallel Requests
+
+```tsx
+const fetchPostWithComments = async ({ queryKey }: QueryFunctionContext) => {
+  const [, postId] = queryKey as [string, number]
+  
+  // Fetch post and comments in parallel
+  const [post, comments] = await Promise.all([
+    fetch(`/api/posts/${postId}`).then(r => r.json()),
+    fetch(`/api/posts/${postId}/comments`).then(r => r.json()),
+  ])
+  
+  return { post, comments }
+}
+
+const { data } = useQuery({
+  queryKey: ['postWithComments', postId],
+  queryFn: fetchPostWithComments,
+})
+```
+
+### Dependent Queries
+
+```tsx
+// First query
+const { data: user } = useQuery({
+  queryKey: ['user'],
+  queryFn: fetchUser,
+})
+
+// Second query depends on first
+const { data: posts } = useQuery({
+  queryKey: ['posts', user?.id],
+  queryFn: ({ queryKey }) => {
+    const [, userId] = queryKey
+    return fetchUserPosts(userId)
+  },
+  enabled: !!user?.id,  // Only run when we have userId
+})
+```
+
+### Pagination
+
+```tsx
+interface PaginatedResponse<T> {
+  data: T[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+const fetchPosts = async (
+  { queryKey }: QueryFunctionContext
+): Promise<PaginatedResponse<Post>> => {
+  const [, { page, pageSize }] = queryKey as [
+    string,
+    { page: number; pageSize: number },
+  ]
+  
+  const response = await fetch(
+    `/api/posts?page=${page}&pageSize=${pageSize}`
+  )
+  return response.json()
+}
+
+const { data } = useQuery({
+  queryKey: ['posts', { page, pageSize }],
+  queryFn: fetchPosts,
+})
+```
+
+### Request Deduplication
+
+TanStack Query automatically deduplicates requests with the same query key:
+
+```tsx
+// Component A
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+})
+
+// Component B (rendered at same time)
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+})
+
+// Only ONE request is made - both components share the same query
+```
+
+## Advanced Techniques
+
+### Optimistic Response
+
+Return optimistic data immediately while fetching:
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['post', postId],
+  queryFn: fetchPost,
+  placeholderData: (previousData) => previousData,  // Use previous data while refetching
+})
+```
+
+### Conditional Fetching
+
+Use the `enabled` option for conditional fetching:
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['post', postId],
+  queryFn: fetchPost,
+  enabled: postId !== undefined && userIsAuthenticated,
+})
+```
+
+### Query Function Factories
+
+Create factories for reusable query functions:
+
+```tsx
+const createFetcher = <T,>(endpoint: string) => {
+  return async ({ queryKey, signal }: QueryFunctionContext): Promise<T> => {
+    const params = queryKey.slice(1).filter(Boolean)
+    const url = params.length > 0 
+      ? `${endpoint}/${params.join('/')}` 
+      : endpoint
+    
+    const response = await fetch(url, { signal })
+    if (!response.ok) throw new Error('Request failed')
+    return response.json()
+  }
+}
+
+// Usage
+const { data: posts } = useQuery({
+  queryKey: ['posts'],
+  queryFn: createFetcher<Post[]>('/api/posts'),
+})
+
+const { data: post } = useQuery({
+  queryKey: ['posts', postId],
+  queryFn: createFetcher<Post>('/api/posts'),
+})
+```
+
+## Important Behaviors
+
+<Note>
+  **Automatic retries**: Query functions are automatically retried 3 times with exponential backoff by default. Configure with `retry` and `retryDelay` options.
+</Note>
+
+<Note>
+  **Request cancellation**: If you access `signal` in your query function and the query becomes unused, the request will be aborted and the query state will revert to its previous state.
+</Note>
+
+<Note>
+  **Error handling**: Any error thrown in a query function will set the query to an error state. The error is available via the `error` property of the query result.
+</Note>
+
+<Note>
+  **Promise rejection**: Make sure to handle promise rejections properly. Unhandled rejections in query functions will still set the query to an error state.
+</Note>

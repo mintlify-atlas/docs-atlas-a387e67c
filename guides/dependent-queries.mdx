@@ -1,0 +1,432 @@
+---
+title: Dependent Queries
+description: Execute queries that depend on data from previous queries
+---
+
+Dependent queries (also known as serial queries) are queries that depend on the results of previous queries before they can execute. TanStack Query provides the `enabled` option to handle this pattern elegantly.
+
+## Basic Dependent Query
+
+Use the `enabled` option to control when a query should run:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function Post({ postId }: { postId: number }) {
+  const { data: post } = useQuery({
+    queryKey: ['post', postId],
+    queryFn: () => fetchPost(postId),
+    enabled: !!postId,
+  })
+  
+  return <div>{post?.title}</div>
+}
+```
+
+The query will not execute until `postId` is truthy.
+
+## Chaining Dependent Queries
+
+Chain multiple queries where each depends on the previous:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function UserWithPosts({ userId }: { userId: string }) {
+  // First query: Get user
+  const { data: user } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  })
+  
+  // Second query: Get user's posts (depends on user data)
+  const { data: posts } = useQuery({
+    queryKey: ['posts', user?.id],
+    queryFn: () => fetchPosts(user!.id),
+    enabled: !!user?.id,
+  })
+  
+  // Third query: Get post comments (depends on posts)
+  const { data: comments } = useQuery({
+    queryKey: ['comments', posts?.[0]?.id],
+    queryFn: () => fetchComments(posts![0].id),
+    enabled: !!posts?.[0]?.id,
+  })
+  
+  return (
+    <div>
+      <h1>{user?.name}</h1>
+      <h2>Posts: {posts?.length}</h2>
+      <h3>Comments: {comments?.length}</h3>
+    </div>
+  )
+}
+```
+
+## Real-World Example from Source
+
+Based on the actual TanStack Query examples:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+type Post = {
+  id: number
+  title: string
+  body: string
+}
+
+function Post({
+  postId,
+  setPostId,
+}: {
+  postId: number
+  setPostId: React.Dispatch<React.SetStateAction<number>>
+}) {
+  const { status, data, error, isFetching } = useQuery({
+    queryKey: ['post', postId],
+    queryFn: async (): Promise<Post> => {
+      const response = await fetch(
+        `https://jsonplaceholder.typicode.com/posts/${postId}`
+      )
+      return response.json()
+    },
+    enabled: !!postId, // Only fetch when postId is truthy
+  })
+  
+  return (
+    <div>
+      <div>
+        <a onClick={() => setPostId(-1)} href="#">
+          Back
+        </a>
+      </div>
+      {!postId || status === 'pending' ? (
+        'Loading...'
+      ) : status === 'error' ? (
+        <span>Error: {error.message}</span>
+      ) : (
+        <>
+          <h1>{data.title}</h1>
+          <div>
+            <p>{data.body}</p>
+          </div>
+          <div>{isFetching ? 'Background Updating...' : ' '}</div>
+        </>
+      )}
+    </div>
+  )
+}
+```
+
+## Handling Loading States
+
+### Sequential Loading Indicators
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function UserDashboard({ userId }: { userId: string }) {
+  const userQuery = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  })
+  
+  const preferencesQuery = useQuery({
+    queryKey: ['preferences', userQuery.data?.id],
+    queryFn: () => fetchPreferences(userQuery.data!.id),
+    enabled: !!userQuery.data,
+  })
+  
+  if (userQuery.isLoading) {
+    return <div>Loading user...</div>
+  }
+  
+  if (userQuery.isError) {
+    return <div>Error loading user: {userQuery.error.message}</div>
+  }
+  
+  return (
+    <div>
+      <h1>{userQuery.data.name}</h1>
+      {preferencesQuery.isLoading && <div>Loading preferences...</div>}
+      {preferencesQuery.data && (
+        <Settings preferences={preferencesQuery.data} />
+      )}
+    </div>
+  )
+}
+```
+
+### Combined Status
+
+Track the overall loading state:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function ProjectDetails({ projectId }: { projectId: string }) {
+  const projectQuery = useQuery({
+    queryKey: ['project', projectId],
+    queryFn: () => fetchProject(projectId),
+  })
+  
+  const membersQuery = useQuery({
+    queryKey: ['members', projectId],
+    queryFn: () => fetchMembers(projectId),
+    enabled: !!projectQuery.data,
+  })
+  
+  const tasksQuery = useQuery({
+    queryKey: ['tasks', projectId],
+    queryFn: () => fetchTasks(projectId),
+    enabled: !!projectQuery.data,
+  })
+  
+  const isLoadingAny = projectQuery.isLoading || 
+                       membersQuery.isLoading || 
+                       tasksQuery.isLoading
+  
+  if (isLoadingAny) {
+    return <LoadingSpinner />
+  }
+  
+  return (
+    <div>
+      <h1>{projectQuery.data?.name}</h1>
+      <Members data={membersQuery.data} />
+      <Tasks data={tasksQuery.data} />
+    </div>
+  )
+}
+```
+
+## Dynamic Dependencies
+
+### Conditional Dependencies
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function Article({ articleId, includeComments }: {
+  articleId: string
+  includeComments: boolean
+}) {
+  const articleQuery = useQuery({
+    queryKey: ['article', articleId],
+    queryFn: () => fetchArticle(articleId),
+  })
+  
+  const commentsQuery = useQuery({
+    queryKey: ['comments', articleId],
+    queryFn: () => fetchComments(articleId),
+    // Only fetch comments if enabled AND article is loaded
+    enabled: includeComments && !!articleQuery.data,
+  })
+  
+  return (
+    <div>
+      <ArticleContent data={articleQuery.data} />
+      {includeComments && commentsQuery.data && (
+        <Comments data={commentsQuery.data} />
+      )}
+    </div>
+  )
+}
+```
+
+### Depends on Multiple Queries
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function Report({ userId, dateRange }: {
+  userId: string
+  dateRange: { start: Date; end: Date }
+}) {
+  const userQuery = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  })
+  
+  const permissionsQuery = useQuery({
+    queryKey: ['permissions', userId],
+    queryFn: () => fetchPermissions(userId),
+  })
+  
+  // Report query depends on both user and permissions
+  const reportQuery = useQuery({
+    queryKey: ['report', userId, dateRange],
+    queryFn: () => fetchReport(userId, dateRange),
+    enabled: !!userQuery.data && !!permissionsQuery.data?.canViewReports,
+  })
+  
+  if (!permissionsQuery.data?.canViewReports) {
+    return <div>You don't have permission to view reports</div>
+  }
+  
+  return (
+    <div>
+      {reportQuery.isLoading && <div>Loading report...</div>}
+      {reportQuery.data && <ReportView data={reportQuery.data} />}
+    </div>
+  )
+}
+```
+
+## Using queryOptions for Type Safety
+
+Define dependent queries with better type safety:
+
+```tsx
+import { queryOptions, useQuery } from '@tanstack/react-query'
+
+const userOptions = (userId: string) => queryOptions({
+  queryKey: ['user', userId],
+  queryFn: async () => {
+    const res = await fetch(`/api/users/${userId}`)
+    return res.json() as Promise<User>
+  },
+})
+
+const userPostsOptions = (userId: string) => queryOptions({
+  queryKey: ['posts', userId],
+  queryFn: async () => {
+    const res = await fetch(`/api/users/${userId}/posts`)
+    return res.json() as Promise<Post[]>
+  },
+})
+
+function UserProfile({ userId }: { userId: string }) {
+  const { data: user } = useQuery(userOptions(userId))
+  
+  const { data: posts } = useQuery({
+    ...userPostsOptions(userId),
+    enabled: !!user,
+  })
+  
+  return (
+    <div>
+      <h1>{user?.name}</h1>
+      <PostList posts={posts} />
+    </div>
+  )
+}
+```
+
+## Error Handling in Dependent Queries
+
+### Early Error Exit
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function OrderDetails({ orderId }: { orderId: string }) {
+  const orderQuery = useQuery({
+    queryKey: ['order', orderId],
+    queryFn: () => fetchOrder(orderId),
+  })
+  
+  const shipmentQuery = useQuery({
+    queryKey: ['shipment', orderQuery.data?.shipmentId],
+    queryFn: () => fetchShipment(orderQuery.data!.shipmentId),
+    enabled: !!orderQuery.data?.shipmentId,
+  })
+  
+  // Handle first query error
+  if (orderQuery.isError) {
+    return <div>Failed to load order: {orderQuery.error.message}</div>
+  }
+  
+  // Handle second query error
+  if (shipmentQuery.isError) {
+    return <div>Failed to load shipment: {shipmentQuery.error.message}</div>
+  }
+  
+  if (orderQuery.isLoading) {
+    return <div>Loading order...</div>
+  }
+  
+  return (
+    <div>
+      <h1>Order #{orderQuery.data.id}</h1>
+      {shipmentQuery.isLoading && <div>Loading shipment...</div>}
+      {shipmentQuery.data && <Shipment data={shipmentQuery.data} />}
+    </div>
+  )
+}
+```
+
+## Common Patterns
+
+### Master-Detail Pattern
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function MasterDetail() {
+  const [selectedId, setSelectedId] = React.useState<string | null>(null)
+  
+  const listQuery = useQuery({
+    queryKey: ['items'],
+    queryFn: fetchItems,
+  })
+  
+  const detailQuery = useQuery({
+    queryKey: ['item', selectedId],
+    queryFn: () => fetchItem(selectedId!),
+    enabled: !!selectedId,
+  })
+  
+  return (
+    <div>
+      <aside>
+        {listQuery.data?.map(item => (
+          <button key={item.id} onClick={() => setSelectedId(item.id)}>
+            {item.name}
+          </button>
+        ))}
+      </aside>
+      <main>
+        {detailQuery.data && <ItemDetail data={detailQuery.data} />}
+      </main>
+    </div>
+  )
+}
+```
+
+<Warning>
+  **Performance Consideration**: Dependent queries create a waterfall effect where queries run sequentially. If the dependencies are artificial (you actually have all the data needed), consider running queries in parallel instead. Only use dependent queries when there's a true data dependency.
+</Warning>
+
+## When NOT to Use Dependent Queries
+
+```tsx
+// ❌ Artificial dependency - userId is already available
+function BadExample({ userId }: { userId: string }) {
+  const userQuery = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  })
+  
+  const postsQuery = useQuery({
+    queryKey: ['posts', userId],
+    queryFn: () => fetchPosts(userId),
+    enabled: !!userQuery.data, // Unnecessary wait
+  })
+}
+
+// ✅ Both queries can run in parallel
+function GoodExample({ userId }: { userId: string }) {
+  const userQuery = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  })
+  
+  const postsQuery = useQuery({
+    queryKey: ['posts', userId],
+    queryFn: () => fetchPosts(userId),
+    // No dependency - runs immediately
+  })
+}
+```

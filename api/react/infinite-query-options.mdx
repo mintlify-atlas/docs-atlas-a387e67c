@@ -1,0 +1,431 @@
+---
+title: infiniteQueryOptions
+description: Helper function for creating type-safe, reusable infinite query configurations
+---
+
+The `infiniteQueryOptions` helper function is used to create type-safe, reusable infinite query option configurations. It provides better type inference and helps organize infinite query definitions.
+
+## Import
+
+```tsx
+import { infiniteQueryOptions } from '@tanstack/react-query'
+```
+
+## Signature
+
+```tsx
+function infiniteQueryOptions<
+  TQueryFnData,
+  TError = DefaultError,
+  TData = InfiniteData<TQueryFnData>,
+  TQueryKey extends QueryKey = QueryKey,
+  TPageParam = unknown,
+>(
+  options: UseInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>
+): UseInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam> & {
+  queryKey: DataTag<TQueryKey, InfiniteData<TQueryFnData>, TError>
+}
+```
+
+## Parameters
+
+### options
+
+- **Type:** `UseInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>`
+- **Required:** Yes
+
+The infinite query configuration object. Accepts all options that can be passed to `useInfiniteQuery`, including:
+- `queryKey`
+- `queryFn`
+- `initialPageParam`
+- `getNextPageParam`
+- `getPreviousPageParam`
+- All other query options
+
+## Returns
+
+The same options object that was passed in, enhanced with better type inference.
+
+## Benefits
+
+- **Better Type Inference**: Automatically infers types from the query function
+- **Type Safety**: Ensures all options are type-safe, including page params
+- **Reusability**: Create reusable infinite query definitions
+- **Centralized Configuration**: Keep infinite query configurations in one place
+- **Easier Testing**: Query options can be tested independently
+
+## Examples
+
+### Basic Usage
+
+```tsx
+import { infiniteQueryOptions, useInfiniteQuery } from '@tanstack/react-query'
+
+const projectsInfiniteOptions = infiniteQueryOptions({
+  queryKey: ['projects'],
+  queryFn: async ({ pageParam }) => {
+    const response = await fetch(`/api/projects?cursor=${pageParam}`)
+    return response.json()
+  },
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
+
+function Projects() {
+  const { data, fetchNextPage, hasNextPage } = useInfiniteQuery(
+    projectsInfiniteOptions
+  )
+  
+  return (
+    <div>
+      {data.pages.map((page) =>
+        page.items.map((project) => <div key={project.id}>{project.name}</div>)
+      )}
+      {hasNextPage && <button onClick={() => fetchNextPage()}>Load More</button>}
+    </div>
+  )
+}
+```
+
+### With Variables
+
+```tsx
+import { infiniteQueryOptions, useInfiniteQuery } from '@tanstack/react-query'
+
+type PostsResponse = {
+  posts: Array<{ id: number; title: string }>
+  nextCursor?: number
+}
+
+const userPostsInfiniteOptions = (userId: number) =>
+  infiniteQueryOptions({
+    queryKey: ['posts', userId],
+    queryFn: async ({ pageParam }): Promise<PostsResponse> => {
+      const response = await fetch(
+        `/api/users/${userId}/posts?cursor=${pageParam}`
+      )
+      return response.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+
+function UserPosts({ userId }: { userId: number }) {
+  const { data, fetchNextPage } = useInfiniteQuery(
+    userPostsInfiniteOptions(userId)
+  )
+  
+  return <div>{/* ... */}</div>
+}
+```
+
+### Bi-directional Pagination
+
+```tsx
+import { infiniteQueryOptions, useInfiniteQuery } from '@tanstack/react-query'
+
+const messagesInfiniteOptions = infiniteQueryOptions({
+  queryKey: ['messages'],
+  queryFn: async ({ pageParam }) => {
+    const response = await fetch(`/api/messages?cursor=${pageParam}`)
+    return response.json()
+  },
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+  getPreviousPageParam: (firstPage) => firstPage.prevCursor,
+})
+
+function Messages() {
+  const {
+    data,
+    fetchNextPage,
+    fetchPreviousPage,
+    hasNextPage,
+    hasPreviousPage,
+  } = useInfiniteQuery(messagesInfiniteOptions)
+  
+  return (
+    <div>
+      <button onClick={() => fetchPreviousPage()} disabled={!hasPreviousPage}>
+        Load Newer
+      </button>
+      {data.pages.map((page) => (
+        // Render messages
+      ))}
+      <button onClick={() => fetchNextPage()} disabled={!hasNextPage}>
+        Load Older
+      </button>
+    </div>
+  )
+}
+```
+
+### Reusable Query Definitions
+
+```tsx
+import { infiniteQueryOptions } from '@tanstack/react-query'
+
+type Project = { id: number; name: string }
+type ProjectsPage = {
+  items: Project[]
+  nextCursor?: number
+}
+
+export const infiniteQueries = {
+  projects: {
+    all: () =>
+      infiniteQueryOptions({
+        queryKey: ['projects'],
+        queryFn: async ({ pageParam }): Promise<ProjectsPage> => {
+          const res = await fetch(`/api/projects?cursor=${pageParam}`)
+          return res.json()
+        },
+        initialPageParam: 0,
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+      }),
+    
+    byStatus: (status: string) =>
+      infiniteQueryOptions({
+        queryKey: ['projects', { status }],
+        queryFn: async ({ pageParam }): Promise<ProjectsPage> => {
+          const res = await fetch(
+            `/api/projects?status=${status}&cursor=${pageParam}`
+          )
+          return res.json()
+        },
+        initialPageParam: 0,
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+      }),
+  },
+}
+
+// Usage
+function AllProjects() {
+  const { data } = useInfiniteQuery(infiniteQueries.projects.all())
+  return <div>{/* ... */}</div>
+}
+
+function ActiveProjects() {
+  const { data } = useInfiniteQuery(infiniteQueries.projects.byStatus('active'))
+  return <div>{/* ... */}</div>
+}
+```
+
+### Page-based Pagination
+
+```tsx
+import { infiniteQueryOptions, useInfiniteQuery } from '@tanstack/react-query'
+
+type PostsPage = {
+  posts: Array<{ id: number; title: string }>
+  page: number
+  totalPages: number
+}
+
+const postsInfiniteOptions = infiniteQueryOptions({
+  queryKey: ['posts'],
+  queryFn: async ({ pageParam }): Promise<PostsPage> => {
+    const response = await fetch(`/api/posts?page=${pageParam}`)
+    return response.json()
+  },
+  initialPageParam: 1,
+  getNextPageParam: (lastPage) => {
+    if (lastPage.page < lastPage.totalPages) {
+      return lastPage.page + 1
+    }
+    return undefined
+  },
+})
+
+function Posts() {
+  const { data, fetchNextPage, hasNextPage } = useInfiniteQuery(
+    postsInfiniteOptions
+  )
+  
+  return <div>{/* ... */}</div>
+}
+```
+
+### With Select
+
+```tsx
+import { infiniteQueryOptions, useInfiniteQuery } from '@tanstack/react-query'
+
+const projectsInfiniteOptions = infiniteQueryOptions({
+  queryKey: ['projects'],
+  queryFn: ({ pageParam }) => fetchProjects(pageParam),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+  select: (data) => ({
+    // Flatten all pages into a single array
+    projects: data.pages.flatMap((page) => page.items),
+    pageParams: data.pageParams,
+  }),
+})
+
+function Projects() {
+  const { data } = useInfiniteQuery(projectsInfiniteOptions)
+  // data.projects is a flat array
+  return <div>{/* ... */}</div>
+}
+```
+
+### Server-Side Prefetching
+
+```tsx
+import { infiniteQueryOptions, QueryClient, dehydrate } from '@tanstack/react-query'
+
+const projectsInfiniteOptions = infiniteQueryOptions({
+  queryKey: ['projects'],
+  queryFn: ({ pageParam }) => fetchProjects(pageParam),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
+
+// Server-side (Next.js)
+export async function getServerSideProps() {
+  const queryClient = new QueryClient()
+
+  await queryClient.prefetchInfiniteQuery(projectsInfiniteOptions)
+
+  return {
+    props: {
+      dehydratedState: dehydrate(queryClient),
+    },
+  }
+}
+```
+
+### Max Pages
+
+```tsx
+import { infiniteQueryOptions, useInfiniteQuery } from '@tanstack/react-query'
+
+const feedInfiniteOptions = infiniteQueryOptions({
+  queryKey: ['feed'],
+  queryFn: ({ pageParam }) => fetchFeed(pageParam),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+  maxPages: 3, // Only keep the last 3 pages
+})
+
+function Feed() {
+  const { data } = useInfiniteQuery(feedInfiniteOptions)
+  return <div>{/* ... */}</div>
+}
+```
+
+### With Stale Time
+
+```tsx
+import { infiniteQueryOptions, useInfiniteQuery } from '@tanstack/react-query'
+
+const notificationsInfiniteOptions = infiniteQueryOptions({
+  queryKey: ['notifications'],
+  queryFn: ({ pageParam }) => fetchNotifications(pageParam),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+  staleTime: 5 * 60 * 1000, // 5 minutes
+  refetchInterval: 60 * 1000, // Refetch every minute
+})
+
+function Notifications() {
+  const { data } = useInfiniteQuery(notificationsInfiniteOptions)
+  return <div>{/* ... */}</div>
+}
+```
+
+### Query Factory Pattern
+
+```tsx
+import { infiniteQueryOptions } from '@tanstack/react-query'
+
+type Feed = { id: number; content: string }
+type FeedPage = {
+  items: Feed[]
+  nextCursor?: number
+  prevCursor?: number
+}
+
+export const feedQueries = {
+  all: () =>
+    infiniteQueryOptions({
+      queryKey: ['feed'],
+      queryFn: async ({ pageParam }): Promise<FeedPage> => {
+        const res = await fetch(`/api/feed?cursor=${pageParam}`)
+        return res.json()
+      },
+      initialPageParam: 0,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+      getPreviousPageParam: (firstPage) => firstPage.prevCursor,
+    }),
+  
+  byUser: (userId: number) =>
+    infiniteQueryOptions({
+      queryKey: ['feed', 'user', userId],
+      queryFn: async ({ pageParam }): Promise<FeedPage> => {
+        const res = await fetch(
+          `/api/users/${userId}/feed?cursor=${pageParam}`
+        )
+        return res.json()
+      },
+      initialPageParam: 0,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+    }),
+}
+
+// Usage
+function GlobalFeed() {
+  const { data, fetchNextPage } = useInfiniteQuery(feedQueries.all())
+  return <div>{/* ... */}</div>
+}
+
+function UserFeed({ userId }: { userId: number }) {
+  const { data, fetchNextPage } = useInfiniteQuery(feedQueries.byUser(userId))
+  return <div>{/* ... */}</div>
+}
+```
+
+### Testing
+
+```tsx
+import { infiniteQueryOptions } from '@tanstack/react-query'
+import { expect, test } from 'vitest'
+
+const projectsInfiniteOptions = infiniteQueryOptions({
+  queryKey: ['projects'],
+  queryFn: fetchProjects,
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
+
+test('projects infinite query options', () => {
+  expect(projectsInfiniteOptions.queryKey).toEqual(['projects'])
+  expect(projectsInfiniteOptions.queryFn).toBeDefined()
+  expect(projectsInfiniteOptions.initialPageParam).toBe(0)
+})
+
+test('can fetch first page', async () => {
+  const data = await projectsInfiniteOptions.queryFn({
+    queryKey: projectsInfiniteOptions.queryKey,
+    pageParam: projectsInfiniteOptions.initialPageParam,
+    signal: new AbortController().signal,
+    meta: undefined,
+    direction: 'forward',
+  })
+  
+  expect(data).toBeDefined()
+  expect(data.items).toBeDefined()
+  expect(Array.isArray(data.items)).toBe(true)
+})
+```
+
+## Notes
+
+- `infiniteQueryOptions` is a type-safe identity function - it returns the same object you pass in
+- Helps TypeScript infer types automatically from your query function and page params
+- Makes infinite query configurations reusable across components, server prefetching, and testing
+- Works with both cursor-based and page-based pagination
+- Supports bi-directional pagination with `getPreviousPageParam`
+- Can be combined with other query options when using `useInfiniteQuery`
+- Recommended pattern for organizing infinite query definitions in larger applications

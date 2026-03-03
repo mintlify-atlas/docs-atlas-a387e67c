@@ -1,0 +1,328 @@
+---
+title: Server-Side Rendering (SSR)
+description: Learn how to implement server-side rendering with TanStack Query in Next.js, Remix, and other frameworks
+---
+
+## Overview
+
+TanStack Query supports server-side rendering (SSR) and works seamlessly with frameworks like Next.js, Remix, and others. The library provides two primary approaches for SSR: **Initial Data** and **Hydration**.
+
+## How SSR Works in TanStack Query
+
+On the server, queries are **not automatically triggered**. By default, `useQuery` will return a `pending` status without fetching data. This behavior prevents unnecessary server-side fetches and gives you full control over data fetching.
+
+```tsx
+// On the server, this will NOT fetch automatically
+function Page() {
+  const query = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts
+  })
+  // status will be 'pending' on the server
+  return <div>{query.status}</div>
+}
+```
+
+## Method 1: Prefetching and Hydration
+
+The recommended approach is to prefetch queries on the server and hydrate them on the client using `HydrationBoundary`.
+
+### Next.js App Router (React Server Components)
+
+```tsx
+// app/providers.tsx
+'use client'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+import { getQueryClient } from './get-query-client'
+
+export default function Providers({ children }: { children: React.ReactNode }) {
+  const queryClient = getQueryClient()
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      {children}
+      <ReactQueryDevtools />
+    </QueryClientProvider>
+  )
+}
+```
+
+```tsx
+// app/page.tsx
+import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
+import { getQueryClient } from './get-query-client'
+
+export default function Home() {
+  const queryClient = getQueryClient()
+
+  // Prefetch on the server
+  void queryClient.prefetchQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  return (
+    <HydrationBoundary state={dehydrate(queryClient)}>
+      <Posts />
+    </HydrationBoundary>
+  )
+}
+```
+
+```tsx
+// app/get-query-client.ts
+import { QueryClient } from '@tanstack/react-query'
+import { cache } from 'react'
+
+// Create a singleton QueryClient per request
+export const getQueryClient = cache(() => new QueryClient())
+```
+
+### Next.js Pages Router
+
+```tsx
+// pages/_app.tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useState } from 'react'
+import type { AppProps } from 'next/app'
+
+export default function App({ Component, pageProps }: AppProps) {
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 60 * 1000,
+          },
+        },
+      })
+  )
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Component {...pageProps} />
+    </QueryClientProvider>
+  )
+}
+```
+
+```tsx
+// pages/posts.tsx
+import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query'
+import type { GetServerSideProps } from 'next'
+
+export const getServerSideProps: GetServerSideProps = async () => {
+  const queryClient = new QueryClient()
+
+  await queryClient.prefetchQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  return {
+    props: {
+      dehydratedState: dehydrate(queryClient),
+    },
+  }
+}
+
+function Posts() {
+  const { data } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  return <div>{/* render posts */}</div>
+}
+
+export default function PostsPage({ dehydratedState }) {
+  return (
+    <HydrationBoundary state={dehydratedState}>
+      <Posts />
+    </HydrationBoundary>
+  )
+}
+```
+
+## Method 2: Initial Data
+
+You can also pass server-fetched data directly as `initialData`:
+
+```tsx
+export const getServerSideProps: GetServerSideProps = async () => {
+  const posts = await fetchPosts()
+
+  return {
+    props: { posts },
+  }
+}
+
+function Posts({ posts }) {
+  const { data } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+    initialData: posts,
+  })
+
+  return <div>{/* render posts */}</div>
+}
+```
+
+## Dehydration Options
+
+The `dehydrate` function accepts options to control what gets serialized:
+
+```tsx
+const dehydratedState = dehydrate(queryClient, {
+  // Only include successful queries
+  shouldDehydrateQuery: (query) => {
+    return query.state.status === 'success'
+  },
+  // Only include paused mutations
+  shouldDehydrateMutation: (mutation) => {
+    return mutation.state.isPaused
+  },
+  // Redact errors in production
+  shouldRedactErrors: (error) => {
+    return process.env.NODE_ENV === 'production'
+  },
+  // Transform data before serialization
+  serializeData: (data) => {
+    return serialize(data)
+  },
+})
+```
+
+## Hydration Process
+
+The `hydrate` function restores queries and mutations to the cache:
+
+```tsx
+import { hydrate, QueryClient } from '@tanstack/query-core'
+
+const queryClient = new QueryClient()
+
+hydrate(queryClient, dehydratedState, {
+  defaultOptions: {
+    queries: {
+      staleTime: 60 * 1000,
+    },
+    // Transform data after deserialization
+    deserializeData: (data) => {
+      return deserialize(data)
+    },
+  },
+})
+```
+
+## HydrationBoundary Component
+
+The `HydrationBoundary` component handles hydration efficiently:
+
+- **New queries** are hydrated immediately during render
+- **Existing queries** are hydrated after render to avoid disrupting React transitions
+- Automatically compares timestamps to ensure fresh data wins
+
+```tsx
+<HydrationBoundary state={dehydratedState}>
+  <YourComponent />
+</HydrationBoundary>
+```
+
+## Streaming with Suspense
+
+For Next.js App Router with Suspense, you can stream data as it loads:
+
+```tsx
+import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
+import { Suspense } from 'react'
+
+export default async function Page() {
+  const queryClient = getQueryClient()
+
+  // Start prefetch but don't await
+  const queryPromise = queryClient.prefetchQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  return (
+    <HydrationBoundary state={dehydrate(queryClient)}>
+      <Suspense fallback={<div>Loading...</div>}>
+        <Posts />
+      </Suspense>
+    </HydrationBoundary>
+  )
+}
+```
+
+## Important Considerations
+
+### Server Environment Detection
+
+TanStack Query automatically detects server environments:
+
+```tsx
+// From utils.ts
+export const isServer = typeof window === 'undefined' || 'Deno' in globalThis
+```
+
+### Default Retry Behavior
+
+On the server, queries default to **0 retries** to avoid delays:
+
+```tsx
+// From retryer.ts
+const retry = config.retry ?? (isServer ? 0 : 3)
+```
+
+### Query Client Per Request
+
+Always create a new QueryClient per request to avoid cross-request data leakage:
+
+```tsx
+// ❌ Don't share across requests
+const queryClient = new QueryClient()
+
+// ✅ Create per request
+export const getQueryClient = cache(() => new QueryClient())
+```
+
+## Remix Example
+
+```tsx
+import { json } from '@remix-run/node'
+import { useLoaderData } from '@remix-run/react'
+import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query'
+
+export async function loader() {
+  const queryClient = new QueryClient()
+
+  await queryClient.prefetchQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  return json({ dehydratedState: dehydrate(queryClient) })
+}
+
+export default function Posts() {
+  const { dehydratedState } = useLoaderData<typeof loader>()
+
+  return (
+    <HydrationBoundary state={dehydratedState}>
+      <PostsList />
+    </HydrationBoundary>
+  )
+}
+```
+
+## Best Practices
+
+1. **Always prefetch** on the server for better initial page load
+2. **Use HydrationBoundary** for automatic hydration management
+3. **Create new QueryClient** per request to prevent data leaks
+4. **Configure staleTime** to balance freshness and performance
+5. **Handle errors** gracefully with `shouldRedactErrors`
+6. **Leverage Suspense** for streaming in App Router

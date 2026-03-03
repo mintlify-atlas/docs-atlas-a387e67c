@@ -1,0 +1,199 @@
+---
+title: useInfiniteQuery
+description: Vue composable for fetching paginated or infinite scrolling data
+---
+
+The `useInfiniteQuery` composable is used for fetching data that is paginated or loaded incrementally, such as infinite scrolling lists.
+
+## Import
+
+```vue
+import { useInfiniteQuery } from '@tanstack/vue-query'
+```
+
+## Signature
+
+```ts
+function useInfiniteQuery<
+  TQueryFnData,
+  TError = DefaultError,
+  TData = InfiniteData<TQueryFnData>,
+  TQueryKey extends QueryKey = QueryKey,
+  TPageParam = unknown,
+>(
+  options: MaybeRefOrGetter<UseInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>>,
+  queryClient?: QueryClient,
+): UseInfiniteQueryReturnType<TData, TError>
+```
+
+## Type Parameters
+
+- `TQueryFnData` - The type of data returned by a single page of the query function
+- `TError` - The type of error that can be thrown (defaults to `DefaultError`)
+- `TData` - The type of the final data (defaults to `InfiniteData<TQueryFnData>`)
+- `TQueryKey` - The type of the query key (defaults to `QueryKey`)
+- `TPageParam` - The type of the page parameter (defaults to `unknown`)
+
+## Parameters
+
+<ParamField path="options" type="MaybeRefOrGetter<UseInfiniteQueryOptions>" required>
+  Infinite query configuration object. Can be a ref, getter function, or plain object.
+
+  <Expandable title="properties">
+    <ParamField path="queryKey" type="TQueryKey" required>
+      A unique identifier for the query.
+    </ParamField>
+
+    <ParamField path="queryFn" type="(context: QueryFunctionContext<TQueryKey, TPageParam>) => Promise<TQueryFnData>" required>
+      The function that fetches a page of data. Receives `pageParam` in the context.
+
+      ```ts
+      queryFn: async ({ pageParam = 0 }) => {
+        const response = await fetch(`/api/todos?cursor=${pageParam}`)
+        return response.json()
+      }
+      ```
+    </ParamField>
+
+    <ParamField path="initialPageParam" type="TPageParam" required>
+      The initial page parameter to use for the first page.
+
+      ```ts
+      initialPageParam: 0
+      ```
+    </ParamField>
+
+    <ParamField path="getNextPageParam" type="(lastPage: TQueryFnData, allPages: TQueryFnData[], lastPageParam: TPageParam, allPageParams: TPageParam[]) => TPageParam | undefined | null" required>
+      Function to determine the next page parameter. Return `undefined` or `null` when there are no more pages.
+
+      ```ts
+      getNextPageParam: (lastPage, allPages) => {
+        return lastPage.nextCursor
+      }
+      ```
+    </ParamField>
+
+    <ParamField path="getPreviousPageParam" type="(firstPage: TQueryFnData, allPages: TQueryFnData[], firstPageParam: TPageParam, allPageParams: TPageParam[]) => TPageParam | undefined | null">
+      Function to determine the previous page parameter for bi-directional pagination.
+
+      ```ts
+      getPreviousPageParam: (firstPage, allPages) => {
+        return firstPage.prevCursor
+      }
+      ```
+    </ParamField>
+
+    <ParamField path="maxPages" type="number">
+      Maximum number of pages to store in the data. When exceeded, the oldest pages are removed.
+    </ParamField>
+
+    <ParamField path="enabled" type="MaybeRefOrGetter<boolean>" default="true">
+      Set to `false` to disable the query from automatically running.
+    </ParamField>
+
+    <ParamField path="staleTime" type="number" default="0">
+      The time in milliseconds after data is considered stale.
+    </ParamField>
+
+    <ParamField path="gcTime" type="number" default="300000">
+      The time in milliseconds that unused/inactive cache data remains in memory.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="queryClient" type="QueryClient">
+  Custom QueryClient instance.
+</ParamField>
+
+## Returns
+
+<ResponseField name="data" type="Ref<InfiniteData<TData> | undefined>">
+  The accumulated data from all pages. Contains `pages` array and `pageParams` array.
+</ResponseField>
+
+<ResponseField name="error" type="Ref<TError | null>">
+  The error object if the query failed.
+</ResponseField>
+
+<ResponseField name="status" type="Ref<'pending' | 'error' | 'success'>">
+  The current status of the query.
+</ResponseField>
+
+<ResponseField name="isPending" type="Ref<boolean>">
+  `true` if the query is in a pending state.
+</ResponseField>
+
+<ResponseField name="isFetching" type="Ref<boolean>">
+  `true` if the query is currently fetching.
+</ResponseField>
+
+<ResponseField name="isFetchingNextPage" type="Ref<boolean>">
+  `true` if the query is fetching the next page.
+</ResponseField>
+
+<ResponseField name="isFetchingPreviousPage" type="Ref<boolean>">
+  `true` if the query is fetching the previous page.
+</ResponseField>
+
+<ResponseField name="hasNextPage" type="Ref<boolean>">
+  `true` if there is a next page available to fetch.
+</ResponseField>
+
+<ResponseField name="hasPreviousPage" type="Ref<boolean>">
+  `true` if there is a previous page available to fetch.
+</ResponseField>
+
+<ResponseField name="fetchNextPage" type="() => Promise<InfiniteQueryObserverResult>">
+  Function to fetch the next page.
+</ResponseField>
+
+<ResponseField name="fetchPreviousPage" type="() => Promise<InfiniteQueryObserverResult>">
+  Function to fetch the previous page.
+</ResponseField>
+
+## Example
+
+```vue
+<script setup>
+import { useInfiniteQuery } from '@tanstack/vue-query'
+
+const {
+  data,
+  fetchNextPage,
+  hasNextPage,
+  isFetchingNextPage,
+} = useInfiniteQuery({
+  queryKey: ['todos'],
+  queryFn: async ({ pageParam = 0 }) => {
+    const response = await fetch(
+      `https://api.example.com/todos?cursor=${pageParam}&limit=10`
+    )
+    return response.json()
+  },
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
+</script>
+
+<template>
+  <div>
+    <div v-for="page in data?.pages" :key="page.cursor">
+      <div v-for="todo in page.items" :key="todo.id">
+        {{ todo.title }}
+      </div>
+    </div>
+    
+    <button
+      @click="fetchNextPage"
+      :disabled="!hasNextPage || isFetchingNextPage"
+    >
+      {{ isFetchingNextPage
+        ? 'Loading more...'
+        : hasNextPage
+          ? 'Load More'
+          : 'Nothing more to load'
+      }}
+    </button>
+  </div>
+</template>
+```

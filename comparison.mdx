@@ -1,0 +1,334 @@
+---
+title: Comparison with Other Libraries
+description: See how TanStack Query compares to SWR, Apollo Client, RTK Query, and React Router for data fetching and state management.
+---
+
+This comparison table strives to be as accurate and unbiased as possible. If you use any of these libraries and feel the information could be improved, feel free to suggest changes.
+
+<Note>
+TanStack Query is framework-agnostic and works with React, Vue, Solid, Svelte, and Angular. This comparison focuses on the React implementation but the capabilities apply across all frameworks.
+</Note>
+
+## Feature Key
+
+- ✅ 1st-class, built-in, and ready to use with no added configuration or code
+- 🟡 Supported, but as an unofficial 3rd party or community library/contribution
+- 🔶 Supported and documented, but requires extra user-code to implement
+- 🛑 Not officially supported or documented
+
+## Comparison Table
+
+| Feature | TanStack Query | SWR | Apollo Client | RTK Query | React Router |
+|---------|---------------|-----|---------------|-----------|-------------|
+| **Platform Requirements** | React, Vue, Solid, Svelte, Angular | React | React, GraphQL | Redux | React |
+| **Supported Query Syntax** | Promise, REST, GraphQL | Promise, REST, GraphQL | GraphQL, Any (Reactive Variables) | Promise, REST, GraphQL | Promise, REST, GraphQL |
+| **Caching Strategy** | Hierarchical Key → Value | Unique Key → Value | Normalized Schema | Unique Key → Value | Nested Route → Value |
+| **Cache Key Strategy** | JSON | JSON | GraphQL Query | JSON | Route Path |
+| **Cache Change Detection** | Deep Compare (Stable) | Deep Compare (Stable) | Deep Compare (Unstable) | Referential Equality (===) | Route Change |
+| **Data Change Detection** | Deep Comparison + Structural Sharing | Deep Compare (stable-hash) | Deep Compare (Unstable) | Referential Equality (===) | Loader Run |
+| **Data Memoization** | Full Structural Sharing | Identity (===) | Normalized Identity | Identity (===) | Identity (===) |
+| **Bundle Size** | ~13kb | ~4kb | ~33kb | ~8kb (+ Redux) | ~16kb + history |
+| **Queries** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Mutations** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Cache Persistence** | ✅ | ✅ | ✅ | ✅ | 🛑 Active Routes Only |
+| **Devtools** | ✅ | ✅ | ✅ | ✅ | 🛑 |
+| **Polling/Intervals** | ✅ | ✅ | ✅ | ✅ | 🛑 |
+| **Parallel Queries** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Dependent Queries** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Paginated Queries** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Infinite Queries** | ✅ | ✅ | ✅ | ✅ | 🛑 |
+| **Bi-directional Infinite Queries** | ✅ | 🔶 | 🔶 | ✅ | 🛑 |
+| **Infinite Query Refetching** | ✅ | ✅ | 🛑 | ✅ | 🛑 |
+| **Lagged Query Data** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Selectors** | ✅ | 🛑 | ✅ | ✅ | N/A |
+| **Initial Data** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Scroll Recovery** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Cache Manipulation** | ✅ | ✅ | ✅ | ✅ | 🛑 |
+| **Outdated Query Dismissal** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Render Optimization** | ✅ | ✅ | 🛑 | ✅ | ✅ |
+| **Auto Garbage Collection** | ✅ | 🛑 | 🛑 | ✅ | N/A |
+| **Mutation Hooks** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Offline Mutation Support** | ✅ | 🛑 | 🟡 | 🛑 | 🛑 |
+| **Prefetching APIs** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Query Cancellation** | ✅ | 🛑 | 🛑 | 🛑 | ✅ |
+| **Partial Query Matching** | ✅ | 🔶 | ✅ | ✅ | N/A |
+| **Stale While Revalidate** | ✅ | ✅ | ✅ | ✅ | 🛑 |
+| **Stale Time Configuration** | ✅ | 🛑 | 🛑 | ✅ | 🛑 |
+| **Pre-usage Query Configuration** | ✅ | 🛑 | ✅ | ✅ | ✅ |
+| **Window Focus Refetching** | ✅ | ✅ | 🛑 | ✅ | 🛑 |
+| **Network Status Refetching** | ✅ | ✅ | ✅ | ✅ | 🛑 |
+| **Cache Dehydration/Rehydration** | ✅ | 🛑 | ✅ | ✅ | ✅ |
+| **Offline Caching** | ✅ | 🛑 | ✅ | 🔶 | 🛑 |
+| **React Suspense** | ✅ | ✅ | ✅ | 🛑 | ✅ |
+| **Abstracted/Agnostic Core** | ✅ | 🛑 | ✅ | ✅ | 🛑 |
+| **Automatic Refetch after Mutation** | 🔶 | 🔶 | ✅ | ✅ | ✅ |
+| **Normalized Caching** | 🛑 | 🛑 | ✅ | 🛑 | 🛑 |
+
+## Key Differences Explained
+
+### TanStack Query vs SWR
+
+<AccordionGroup>
+  <Accordion title="Structural Sharing">
+    TanStack Query uses full structural sharing for data memoization, which means it deeply compares query results and only triggers re-renders when actual data changes. SWR uses simple identity comparison (===), which can lead to more re-renders.
+
+    ```typescript
+    // TanStack Query - Only re-renders if data actually changes
+    const { data } = useQuery({
+      queryKey: ['user'],
+      queryFn: fetchUser,
+    })
+
+    // Even if fetchUser returns a new object with the same values,
+    // components won't re-render
+    ```
+  </Accordion>
+
+  <Accordion title="Garbage Collection">
+    TanStack Query automatically removes unused query data from the cache after a configurable timeout (default 5 minutes). SWR keeps all data in cache indefinitely, which can lead to memory issues in large applications.
+  </Accordion>
+
+  <Accordion title="Query Cancellation">
+    TanStack Query supports automatic query cancellation using AbortController. When a component unmounts or a query key changes, the previous request is cancelled. SWR does not support this natively.
+
+    ```typescript
+    const query = useQuery({
+      queryKey: ['user', userId],
+      queryFn: async ({ signal }) => {
+        const response = await fetch(`/api/user/${userId}`, { signal })
+        return response.json()
+      },
+    })
+    ```
+  </Accordion>
+
+  <Accordion title="Stale Time Configuration">
+    TanStack Query allows you to configure how long data is considered fresh before background refetching occurs. SWR treats all data as immediately stale, though it has an "immutable" mode.
+
+    ```typescript
+    const query = useQuery({
+      queryKey: ['user'],
+      queryFn: fetchUser,
+      staleTime: 1000 * 60 * 5, // Fresh for 5 minutes
+    })
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### TanStack Query vs Apollo Client
+
+<AccordionGroup>
+  <Accordion title="Protocol Agnostic">
+    Apollo Client is specifically designed for GraphQL, while TanStack Query works with any async data source (REST, GraphQL, gRPC, etc.).
+
+    ```typescript
+    // Works with REST
+    useQuery({ queryKey: ['user'], queryFn: () => fetch('/api/user') })
+
+    // Works with GraphQL
+    useQuery({ queryKey: ['user'], queryFn: () => graphqlClient.query(...) })
+
+    // Works with anything that returns a Promise
+    useQuery({ queryKey: ['user'], queryFn: () => myCustomFetcher() })
+    ```
+  </Accordion>
+
+  <Accordion title="No Normalized Caching">
+    Apollo Client normalizes data by ID, which prevents data duplication but adds complexity. TanStack Query uses a simpler key-value cache that's easier to reason about and debug.
+
+    **Trade-off:** Apollo's normalized cache automatically updates related queries, while TanStack Query requires manual invalidation. However, TanStack Query's approach is more explicit and predictable.
+  </Accordion>
+
+  <Accordion title="Window Focus Refetching">
+    TanStack Query automatically refetches stale queries when the browser window regains focus, keeping data fresh without user action. Apollo Client does not support this natively.
+  </Accordion>
+
+  <Accordion title="Render Optimization">
+    TanStack Query automatically tracks which query properties you access and only re-renders when those specific properties change. Apollo Client re-renders whenever any part of the query updates.
+
+    ```typescript
+    // Only re-renders when 'data' changes, not 'isLoading' or 'error'
+    function Component() {
+      const { data } = useQuery({ queryKey: ['user'], queryFn: fetchUser })
+      return <div>{data.name}</div>
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### TanStack Query vs RTK Query
+
+<AccordionGroup>
+  <Accordion title="No Redux Required">
+    RTK Query requires Redux and Redux Toolkit as dependencies. TanStack Query is standalone and works without any state management library.
+
+    **Bundle Size Impact:**
+    - TanStack Query: ~13kb
+    - RTK Query: ~8kb + Redux Toolkit (~15kb) + React-Redux (~2kb) = ~25kb total
+  </Accordion>
+
+  <Accordion title="Framework Agnostic">
+    TanStack Query has first-class support for React, Vue, Solid, Svelte, and Angular. RTK Query is React-focused (though Redux can work with other frameworks).
+  </Accordion>
+
+  <Accordion title="Automatic vs Manual Invalidation">
+    RTK Query has a tag-based invalidation system that automatically refetches related queries after mutations. TanStack Query uses manual invalidation, which is more explicit but requires more code.
+
+    ```typescript
+    // TanStack Query - Manual invalidation
+    const mutation = useMutation({
+      mutationFn: updateUser,
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['users'] })
+      },
+    })
+
+    // RTK Query - Automatic invalidation via tags
+    updateUser: builder.mutation({
+      query: (user) => ({ url: '/user', method: 'PUT', body: user }),
+      invalidatesTags: ['User'],
+    })
+    ```
+  </Accordion>
+
+  <Accordion title="React Suspense">
+    TanStack Query has full React Suspense support. RTK Query does not currently support Suspense.
+  </Accordion>
+</AccordionGroup>
+
+### TanStack Query vs React Router (Loaders)
+
+<AccordionGroup>
+  <Accordion title="Cache Persistence">
+    React Router only caches data for active routes. When you navigate away, the data is lost. TanStack Query persists cache across route changes and can even persist to localStorage.
+  </Accordion>
+
+  <Accordion title="Polling and Background Updates">
+    TanStack Query supports automatic refetching on intervals, window focus, and network reconnection. React Router does not support these patterns.
+
+    ```typescript
+    const query = useQuery({
+      queryKey: ['stats'],
+      queryFn: fetchStats,
+      refetchInterval: 30000, // Poll every 30 seconds
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+    })
+    ```
+  </Accordion>
+
+  <Accordion title="Infinite Queries">
+    TanStack Query has built-in support for infinite scroll and load-more patterns. React Router does not have this functionality.
+  </Accordion>
+
+  <Accordion title="Cache Manipulation">
+    TanStack Query allows direct cache manipulation for optimistic updates and manual data updates. React Router does not expose cache manipulation APIs.
+
+    ```typescript
+    // Optimistic update
+    queryClient.setQueryData(['user', userId], (old) => ({
+      ...old,
+      name: newName,
+    }))
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Feature Explanations
+
+### Lagged Query Data
+
+TanStack Query provides a way to continue showing existing data while the next query loads. This is crucial for pagination and infinite loading UIs where you don't want a hard loading state.
+
+```typescript
+const query = useQuery({
+  queryKey: ['posts', page],
+  queryFn: () => fetchPosts(page),
+  placeholderData: (previousData) => previousData, // Keep showing old data
+})
+```
+
+### Render Optimization
+
+TanStack Query automatically tracks which fields you access and only re-renders when those fields change. You can also manually control this:
+
+```typescript
+// Only re-render when data or error changes
+const query = useQuery({
+  queryKey: ['user'],
+  queryFn: fetchUser,
+  notifyOnChangeProps: ['data', 'error'],
+})
+```
+
+### Partial Query Matching
+
+TanStack Query's deterministic query key serialization allows you to manipulate groups of queries:
+
+```typescript
+// Invalidate all queries starting with 'todos'
+queryClient.invalidateQueries({ queryKey: ['todos'] })
+
+// Invalidate specific queries with filters
+queryClient.invalidateQueries({
+  queryKey: ['todos'],
+  predicate: (query) => query.state.data?.completed === true,
+})
+```
+
+### Pre-usage Query Configuration
+
+Define query defaults before using them:
+
+```typescript
+const userQueryOptions = {
+  queryKey: ['user'],
+  queryFn: fetchUser,
+  staleTime: 1000 * 60 * 5,
+}
+
+// Later, use with just the options
+const query = useQuery(userQueryOptions)
+```
+
+## Choosing the Right Library
+
+<CardGroup cols={2}>
+  <Card title="Choose TanStack Query if..." icon="check">
+    - You need framework flexibility (React, Vue, Solid, etc.)
+    - You want protocol-agnostic data fetching
+    - You need advanced caching with garbage collection
+    - You want window focus refetching and polling
+    - You need offline support and persistence
+    - You value explicit, predictable invalidation
+  </Card>
+
+  <Card title="Choose SWR if..." icon="gauge-simple">
+    - You want the smallest bundle size
+    - You have simple data fetching needs
+    - You're building a React-only application
+    - You don't need advanced features like garbage collection
+  </Card>
+
+  <Card title="Choose Apollo Client if..." icon="diagram-project">
+    - You're exclusively using GraphQL
+    - You need normalized caching
+    - You want automatic cache updates from mutations
+    - You need GraphQL-specific features (subscriptions, fragments)
+  </Card>
+
+  <Card title="Choose RTK Query if..." icon="store">
+    - You're already using Redux
+    - You want tag-based automatic invalidation
+    - You prefer co-located API definitions
+    - You're building a React-only application
+  </Card>
+</CardGroup>
+
+## Conclusion
+
+TanStack Query excels at providing a flexible, powerful, and framework-agnostic solution for async state management. While other libraries may have specific advantages (Apollo's GraphQL integration, RTK Query's automatic invalidation), TanStack Query offers the best balance of features, performance, and developer experience for most applications.
+
+<Tip>
+Most developers find that TanStack Query's explicit invalidation model, while requiring slightly more code than automatic solutions, leads to more maintainable and predictable applications over time.
+</Tip>

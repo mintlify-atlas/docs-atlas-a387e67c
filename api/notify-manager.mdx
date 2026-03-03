@@ -1,0 +1,158 @@
+---
+title: notifyManager
+description: API reference for the notifyManager utility that batches state update notifications
+---
+
+The `notifyManager` is a singleton utility that manages batching of state update notifications. It's used internally by TanStack Query to optimize performance by batching multiple state updates together and scheduling them efficiently.
+
+## Import
+
+```ts
+import { notifyManager } from '@tanstack/query-core'
+```
+
+## Methods
+
+### `batch()`
+
+Executes a callback and batches all notifications triggered during its execution.
+
+<ParamField path="callback" type="() => T">
+  A function to execute. All notifications triggered during this function's execution will be batched and flushed together afterward.
+</ParamField>
+
+**Returns:** `T` - The return value of the callback function.
+
+**Example**
+
+```ts
+const result = notifyManager.batch(() => {
+  // Multiple state updates here will be batched
+  query1.setState({ data: newData1 })
+  query2.setState({ data: newData2 })
+  query3.setState({ data: newData3 })
+  return 'done'
+})
+
+// All three updates will be notified together in a single batch
+console.log(result) // 'done'
+```
+
+### `batchCalls()`
+
+Wraps a callback function so that all calls to it are automatically batched.
+
+<ParamField path="callback" type="(...args: T) => void">
+  A function to wrap. The returned function will schedule all calls to be batched together.
+</ParamField>
+
+**Returns:** `(...args: T) => void` - A wrapped version of the callback that batches all invocations.
+
+**Example**
+
+```ts
+const updateUI = notifyManager.batchCalls((data: string) => {
+  console.log('Updating UI with:', data)
+})
+
+// These calls will be batched together
+updateUI('data1')
+updateUI('data2')
+updateUI('data3')
+// All three calls will be executed together in the next batch
+```
+
+### `schedule()`
+
+Schedules a callback to be executed. During a batch transaction, callbacks are queued; otherwise, they're scheduled immediately.
+
+<ParamField path="callback" type="() => void">
+  A callback function to schedule for execution.
+</ParamField>
+
+**Example**
+
+```ts
+notifyManager.schedule(() => {
+  console.log('This will be scheduled for execution')
+})
+```
+
+### `setNotifyFunction()`
+
+Sets a custom notify function that wraps all notifications.
+
+<ParamField path="fn" type="(callback: () => void) => void">
+  A function that will be called to wrap each notification. This can be used to integrate with framework-specific batching mechanisms.
+</ParamField>
+
+**Example**
+
+```ts
+import { act } from 'react'
+
+// Wrap notifications with React's act() for testing
+notifyManager.setNotifyFunction((notify) => {
+  act(notify)
+})
+```
+
+### `setBatchNotifyFunction()`
+
+Sets a custom function to batch notifications together into a single tick.
+
+<ParamField path="fn" type="(callback: () => void) => void">
+  A function that will be called to batch multiple notifications. By default, TanStack Query uses the batch function provided by ReactDOM or React Native.
+</ParamField>
+
+**Example**
+
+```ts
+import { unstable_batchedUpdates } from 'react-dom'
+
+notifyManager.setBatchNotifyFunction(unstable_batchedUpdates)
+```
+
+### `setScheduler()`
+
+Sets a custom scheduler function for scheduling callbacks.
+
+<ParamField path="fn" type="(callback: () => void) => void">
+  A scheduler function that determines how and when callbacks are executed. Defaults to `setTimeout` with a 0ms delay.
+</ParamField>
+
+**Example**
+
+```ts
+// Use requestAnimationFrame for scheduling
+notifyManager.setScheduler((callback) => {
+  requestAnimationFrame(callback)
+})
+
+// Or use a custom scheduler
+notifyManager.setScheduler((callback) => {
+  queueMicrotask(callback)
+})
+```
+
+## How It Works
+
+The `notifyManager` maintains a transaction counter and a queue:
+
+1. When `batch()` is called, it increments the transaction counter
+2. While in a transaction (counter > 0), all scheduled callbacks are added to a queue
+3. When the transaction completes, all queued callbacks are flushed together
+4. Callbacks are executed through the configured notify function and scheduler
+
+## Default Behavior
+
+- **Notify Function**: Executes callbacks immediately by default
+- **Batch Notify Function**: Executes callbacks immediately by default (React integrations override this)
+- **Scheduler**: Uses `setTimeout(() => {}, 0)` to schedule to the next event loop tick
+
+## Use Cases
+
+- **React Integration**: Wrap notifications with `React.act()` during testing
+- **Performance Optimization**: Batch multiple state updates to reduce re-renders
+- **Framework Integration**: Integrate with framework-specific batching mechanisms
+- **Custom Scheduling**: Use alternative schedulers like `requestAnimationFrame` or `queueMicrotask`

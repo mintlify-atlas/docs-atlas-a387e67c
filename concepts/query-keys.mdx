@@ -1,0 +1,405 @@
+---
+title: Query Keys
+description: Understanding query key structure, best practices, and how keys are used for caching and invalidation in TanStack Query
+---
+
+## Overview
+
+Query keys are the foundation of TanStack Query's caching system. They uniquely identify queries and determine how data is cached, shared, and invalidated.
+
+## Key Structure
+
+Query keys must be arrays. They can contain any serializable values:
+
+```tsx
+// Simple key
+queryKey: ['posts']
+
+// Key with variables
+queryKey: ['post', postId]
+
+// Key with multiple variables
+queryKey: ['posts', { status: 'published', page: 1 }]
+
+// Nested arrays are allowed
+queryKey: ['posts', { filters: ['published', 'featured'] }]
+```
+
+<Note>
+  **Arrays are required**: As of TanStack Query v4, query keys must be arrays. String keys like `'posts'` are no longer supported. Use `['posts']` instead.
+</Note>
+
+## Key Hashing
+
+TanStack Query converts query keys into deterministic hash strings for internal storage:
+
+```tsx
+// These create the same hash (object keys are sorted)
+queryKey: ['posts', { page: 1, status: 'published' }]
+queryKey: ['posts', { status: 'published', page: 1 }]
+
+// These create different hashes
+queryKey: ['posts', 1]
+queryKey: ['posts', '1']
+```
+
+The default hash function:
+
+```ts
+export function hashKey(queryKey: QueryKey): string {
+  return JSON.stringify(queryKey, (_, val) =>
+    isPlainObject(val)
+      ? Object.keys(val)
+          .sort()
+          .reduce((result, key) => {
+            result[key] = val[key]
+            return result
+          }, {} as any)
+      : val,
+  )
+}
+```
+
+### Custom Hash Functions
+
+You can provide a custom hash function:
+
+```tsx
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      queryKeyHashFn: (queryKey) => {
+        // Custom hashing logic
+        return customHash(queryKey)
+      },
+    },
+  },
+})
+```
+
+## Key Matching
+
+### Exact Matching
+
+By default, query filters match exactly:
+
+```tsx
+// Only invalidates queries with exactly ['posts', { page: 1 }]
+queryClient.invalidateQueries({
+  queryKey: ['posts', { page: 1 }],
+  exact: true,
+})
+```
+
+### Partial Matching
+
+Without `exact: true`, keys match partially (prefix matching):
+
+```tsx
+// Invalidates ALL queries that start with ['posts']
+queryClient.invalidateQueries({
+  queryKey: ['posts'],
+})
+
+// This matches:
+// ['posts']
+// ['posts', { page: 1 }]
+// ['posts', { status: 'published' }]
+// ['posts', 1, 'comments']
+```
+
+The matching algorithm:
+
+```ts
+export function partialMatchKey(a: QueryKey, b: QueryKey): boolean {
+  if (a === b) return true
+  if (typeof a !== typeof b) return false
+
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    return Object.keys(b).every((key) => partialMatchKey(a[key], b[key]))
+  }
+
+  return false
+}
+```
+
+## Best Practices
+
+### Hierarchical Keys
+
+Organize keys from most general to most specific:
+
+```tsx
+// Good: Hierarchical structure
+queryKey: ['todos']                          // All todos
+queryKey: ['todos', 'list']                  // Todo list view
+queryKey: ['todos', 'list', { filter: 'all' }]  // Filtered list
+queryKey: ['todos', 'detail', todoId]        // Single todo
+
+// Now you can invalidate at any level:
+queryClient.invalidateQueries({ queryKey: ['todos'] })              // All todos
+queryClient.invalidateQueries({ queryKey: ['todos', 'list'] })      // All lists
+queryClient.invalidateQueries({ queryKey: ['todos', 'detail'] })    // All details
+```
+
+### Consistent Ordering
+
+Always use the same order for query key components:
+
+```tsx
+// Good: Consistent order
+queryKey: ['posts', userId, { page, sortBy }]
+
+// Bad: Inconsistent order
+queryKey: ['posts', { page, sortBy }, userId]  // Different from above
+```
+
+### Include All Dependencies
+
+Include all variables that affect the query result:
+
+```tsx
+function useUserPosts(userId: number, filters: Filters) {
+  // Good: All dependencies in key
+  return useQuery({
+    queryKey: ['posts', userId, filters],
+    queryFn: () => fetchUserPosts(userId, filters),
+  })
+}
+
+// Bad: Missing dependencies
+function useUserPosts(userId: number, filters: Filters) {
+  return useQuery({
+    queryKey: ['posts'],  // Missing userId and filters!
+    queryFn: () => fetchUserPosts(userId, filters),
+  })
+}
+```
+
+### Use Type-Safe Keys
+
+Define query key factories for type safety:
+
+```tsx
+const postKeys = {
+  all: ['posts'] as const,
+  lists: () => [...postKeys.all, 'list'] as const,
+  list: (filters: Filters) => [...postKeys.lists(), filters] as const,
+  details: () => [...postKeys.all, 'detail'] as const,
+  detail: (id: number) => [...postKeys.details(), id] as const,
+}
+
+// Usage
+function usePosts(filters: Filters) {
+  return useQuery({
+    queryKey: postKeys.list(filters),
+    queryFn: () => fetchPosts(filters),
+  })
+}
+
+// Invalidation
+queryClient.invalidateQueries({ queryKey: postKeys.lists() })
+```
+
+### Serialize Complex Objects
+
+Ensure objects in keys are serializable:
+
+```tsx
+// Good: Plain objects
+queryKey: ['posts', { status: 'published', tags: ['react', 'typescript'] }]
+
+// Bad: Non-serializable objects
+queryKey: ['posts', new Date()]  // Dates don't serialize consistently
+queryKey: ['posts', someFunction]  // Functions can't be serialized
+queryKey: ['posts', { user: new User() }]  // Class instances
+
+// Better: Use primitive values
+queryKey: ['posts', date.toISOString()]
+queryKey: ['posts', { userId: user.id }]
+```
+
+## Query Key Patterns
+
+### Resource-Based Keys
+
+```tsx
+// Single resource
+queryKey: ['user', userId]
+queryKey: ['post', postId]
+
+// Resource lists
+queryKey: ['users']
+queryKey: ['posts']
+
+// Filtered lists
+queryKey: ['users', { role: 'admin' }]
+queryKey: ['posts', { status: 'published', author: authorId }]
+
+// Related resources
+queryKey: ['user', userId, 'posts']
+queryKey: ['post', postId, 'comments']
+```
+
+### Pagination Keys
+
+```tsx
+// Offset pagination
+queryKey: ['posts', { page, limit }]
+
+// Cursor pagination
+queryKey: ['posts', { cursor }]
+
+// Infinite queries use the same key structure
+queryKey: ['posts', { cursor }]
+```
+
+### Search Keys
+
+```tsx
+// Include search terms in key
+queryKey: ['posts', 'search', { query: searchTerm }]
+
+// Debounce search but keep key simple
+const debouncedSearch = useDebouncedValue(searchTerm, 300)
+queryKey: ['posts', 'search', { query: debouncedSearch }]
+```
+
+## Invalidation Strategies
+
+### Invalidate All Queries for a Resource
+
+```tsx
+// After creating a post, invalidate all post queries
+mutation.mutate(newPost, {
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['posts'] })
+  },
+})
+```
+
+### Invalidate Specific Queries
+
+```tsx
+// After updating a post, invalidate only that post
+mutation.mutate(updatedPost, {
+  onSuccess: (data) => {
+    queryClient.invalidateQueries({
+      queryKey: ['post', data.id],
+      exact: true,
+    })
+  },
+})
+```
+
+### Invalidate Multiple Query Types
+
+```tsx
+// After deleting a user, invalidate user and their posts
+mutation.mutate(userId, {
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['user', userId] })
+    queryClient.invalidateQueries({ queryKey: ['users'] })
+  },
+})
+```
+
+### Selective Invalidation with Predicates
+
+```tsx
+// Invalidate only stale queries
+queryClient.invalidateQueries({
+  queryKey: ['posts'],
+  predicate: (query) => query.isStale(),
+})
+
+// Invalidate based on custom logic
+queryClient.invalidateQueries({
+  queryKey: ['posts'],
+  predicate: (query) => {
+    const filters = query.queryKey[1] as Filters
+    return filters?.status === 'draft'
+  },
+})
+```
+
+## Advanced Patterns
+
+### Dynamic Keys from Query Data
+
+```tsx
+// First query
+const { data: user } = useQuery({
+  queryKey: ['user', userId],
+  queryFn: () => fetchUser(userId),
+})
+
+// Second query depends on first query's data
+const { data: settings } = useQuery({
+  queryKey: ['settings', user?.settingsId],
+  queryFn: () => fetchSettings(user!.settingsId),
+  enabled: !!user?.settingsId,
+})
+```
+
+### Normalized Caching
+
+For relational data, consider including entity type in keys:
+
+```tsx
+const keys = {
+  user: (id: number) => ['user', id] as const,
+  post: (id: number) => ['post', id] as const,
+  comment: (id: number) => ['comment', id] as const,
+}
+
+// When a post is updated, you might update the user cache too
+mutation.mutate(updatedPost, {
+  onSuccess: (post) => {
+    queryClient.setQueryData(keys.post(post.id), post)
+    queryClient.invalidateQueries({ queryKey: keys.user(post.authorId) })
+  },
+})
+```
+
+### Tag-Based Invalidation
+
+Use query metadata for tag-based cache invalidation:
+
+```tsx
+// Define queries with meta tags
+useQuery({
+  queryKey: ['post', postId],
+  queryFn: () => fetchPost(postId),
+  meta: { tags: ['post', 'content'] },
+})
+
+useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  meta: { tags: ['post', 'list'] },
+})
+
+// Invalidate by tag
+queryClient.invalidateQueries({
+  predicate: (query) => query.meta?.tags?.includes('post'),
+})
+```
+
+## Common Pitfalls
+
+<Note>
+  **Don't use non-serializable values**: Avoid using functions, class instances, Dates, or other non-serializable values in query keys. They won't serialize consistently.
+</Note>
+
+<Note>
+  **Include all dependencies**: Every variable used in your `queryFn` should be included in your `queryKey`. Otherwise, the cache won't update when those variables change.
+</Note>
+
+<Note>
+  **Be careful with object key ordering**: While TanStack Query sorts object keys during hashing, it's better to be explicit and consistent with your key structure.
+</Note>
+
+<Note>
+  **Don't over-invalidate**: Invalidating `['posts']` will invalidate ALL post-related queries. Be specific when possible to avoid unnecessary refetches.
+</Note>

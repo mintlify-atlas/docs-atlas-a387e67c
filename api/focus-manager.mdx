@@ -1,0 +1,106 @@
+---
+title: focusManager
+description: API reference for the focusManager utility that tracks window focus state
+---
+
+The `focusManager` is a singleton utility that manages window focus state and notifies listeners when focus changes. It's used internally by TanStack Query to refetch queries when the window regains focus.
+
+## Import
+
+```ts
+import { focusManager } from '@tanstack/query-core'
+```
+
+## Methods
+
+### `setEventListener()`
+
+Sets up a custom event listener function for focus tracking. This is useful for custom environments like React Native.
+
+<ParamField path="setup" type="(setFocused: (focused?: boolean) => void) => (() => void) | undefined">
+  A setup function that receives a `setFocused` callback and should return a cleanup function. The setup function should call `setFocused` when focus state changes.
+</ParamField>
+
+**Example**
+
+```ts
+focusManager.setEventListener((handleFocus) => {
+  // Custom event listener setup
+  if (typeof window !== 'undefined' && window.addEventListener) {
+    const visibilitychangeListener = () => handleFocus()
+    window.addEventListener('visibilitychange', visibilitychangeListener)
+    
+    return () => {
+      window.removeEventListener('visibilitychange', visibilitychangeListener)
+    }
+  }
+  return undefined
+})
+```
+
+### `setFocused()`
+
+Manually sets the focused state. This will trigger listeners if the state changes.
+
+<ParamField path="focused" type="boolean | undefined">
+  The new focused state. If `undefined`, the next call to `isFocused()` will use the default behavior (checking `document.visibilityState`).
+</ParamField>
+
+**Example**
+
+```ts
+// Manually set focus state
+focusManager.setFocused(true)
+
+// Reset to default behavior
+focusManager.setFocused(undefined)
+```
+
+### `isFocused()`
+
+Returns the current focused state.
+
+**Returns:** `boolean`
+
+If a focused state was set via `setFocused()`, returns that value. Otherwise, returns `true` if `document.visibilityState !== 'hidden'`, or `false` if hidden.
+
+**Example**
+
+```ts
+if (focusManager.isFocused()) {
+  console.log('Window is focused')
+}
+```
+
+### `subscribe()`
+
+Subscribes to focus state changes.
+
+<ParamField path="listener" type="(focused: boolean) => void">
+  A callback function that will be called whenever the focus state changes. Receives the new focused state as a boolean.
+</ParamField>
+
+**Returns:** `() => void` - An unsubscribe function to remove the listener.
+
+**Example**
+
+```ts
+const unsubscribe = focusManager.subscribe((isFocused) => {
+  console.log('Focus changed:', isFocused)
+})
+
+// Later, unsubscribe
+unsubscribe()
+```
+
+## Default Behavior
+
+By default, the `focusManager` listens to the `visibilitychange` event on the window object and considers the window focused when `document.visibilityState !== 'hidden'`.
+
+This default setup is automatically initialized when the first listener subscribes.
+
+## Use Cases
+
+- **Custom Environments**: Override the default focus detection for React Native or other non-browser environments
+- **Testing**: Mock focus state changes in tests
+- **Manual Control**: Temporarily override focus state for specific application states

@@ -1,0 +1,276 @@
+---
+title: Introduction to TanStack Query
+description: Learn what TanStack Query is, why you should use it, and how it simplifies fetching, caching, synchronizing and updating server state in your applications.
+---
+
+TanStack Query (formerly React Query) is a powerful async state management library that makes **fetching, caching, synchronizing and updating server state** in your web applications simple and efficient.
+
+## What is TanStack Query?
+
+TanStack Query is often described as the missing data-fetching library for web applications. It provides a robust, flexible solution for managing server state that works across multiple frameworks including React, Vue, Solid, Svelte, and Angular.
+
+Unlike traditional state management libraries that focus on client state, TanStack Query is specifically designed to handle the unique challenges of server state, which is:
+
+- Persisted remotely in a location you may not control or own
+- Requires asynchronous APIs for fetching and updating
+- Implies shared ownership and can be changed by other people without your knowledge
+- Can potentially become "out of date" in your applications if you're not careful
+
+## Why Use TanStack Query?
+
+Most core web frameworks **do not** come with an opinionated way of fetching or updating data in a holistic way. This leads developers to build their own solutions, often cobbling together component-based state and side-effects, or using general purpose state management libraries that aren't optimized for async server state.
+
+TanStack Query solves these common challenges:
+
+<Note>
+Server state management is fundamentally different from client state management. Traditional state management libraries like Redux or Zustand excel at client state but struggle with the asynchronous, remote nature of server state.
+</Note>
+
+### The Challenges TanStack Query Solves
+
+Once you start working with server state, you'll encounter these challenges:
+
+- **Caching** - Possibly the hardest thing to do in programming
+- **Deduping** - Multiple requests for the same data into a single request
+- **Background updates** - Updating "out of date" data in the background
+- **Stale data management** - Knowing when data is "out of date"
+- **Performance optimizations** - Pagination and lazy loading data
+- **Memory management** - Garbage collection of server state
+- **Structural sharing** - Memoizing query results
+
+## Key Benefits
+
+TanStack Query provides immediate value to your application:
+
+### 1. Works Out-of-the-Box with Zero Config
+
+TanStack Query works amazingly well with **zero configuration** and can be customized as your application grows.
+
+### 2. Reduces Code Complexity
+
+Help you remove **many** lines of complicated and misunderstood code from your application and replace it with just a handful of TanStack Query logic.
+
+### 3. Makes Applications More Maintainable
+
+Make your application more maintainable and easier to build new features without worrying about wiring up new server state data sources.
+
+### 4. Improves User Experience
+
+Have a direct impact on your end-users by making your application feel faster and more responsive than ever before.
+
+### 5. Optimizes Performance
+
+Potentially help you save on bandwidth and increase memory performance through intelligent caching and deduplication.
+
+## Core Features
+
+<CardGroup cols={2}>
+  <Card title="Protocol Agnostic" icon="plug">
+    Works with REST, GraphQL, promises, or any async data source
+  </Card>
+  
+  <Card title="Automatic Caching" icon="database">
+    Intelligent caching with automatic refetching and background updates
+  </Card>
+  
+  <Card title="Mutations" icon="arrows-rotate">
+    Powerful mutation hooks with optimistic updates and invalidation
+  </Card>
+  
+  <Card title="DevTools" icon="wrench">
+    Built-in devtools for debugging and inspecting queries
+  </Card>
+  
+  <Card title="Pagination & Infinite Scroll" icon="list">
+    First-class support for paginated and infinite queries
+  </Card>
+  
+  <Card title="React Suspense" icon="hourglass">
+    Full support for React Suspense and streaming
+  </Card>
+  
+  <Card title="Window Focus Refetching" icon="window-restore">
+    Automatically refetch data when the window regains focus
+  </Card>
+  
+  <Card title="Request Cancellation" icon="ban">
+    Cancel outgoing requests when they're no longer needed
+  </Card>
+</CardGroup>
+
+## Framework Support
+
+TanStack Query provides first-class support for all major frameworks:
+
+- **React** - `@tanstack/react-query`
+- **Vue** - `@tanstack/vue-query`
+- **Solid** - `@tanstack/solid-query`
+- **Svelte** - `@tanstack/svelte-query`
+- **Angular** - `@tanstack/angular-query-experimental`
+
+<Tip>
+All framework adapters are built on top of `@tanstack/query-core`, ensuring consistent behavior across all platforms.
+</Tip>
+
+## A Simple Example
+
+Here's TanStack Query in its most basic form, fetching GitHub repository data:
+
+<CodeGroup>
+```tsx React
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+
+const queryClient = new QueryClient()
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Example />
+    </QueryClientProvider>
+  )
+}
+
+function Example() {
+  const { isPending, error, data } = useQuery({
+    queryKey: ['repoData'],
+    queryFn: () =>
+      fetch('https://api.github.com/repos/TanStack/query').then((res) =>
+        res.json(),
+      ),
+  })
+
+  if (isPending) return 'Loading...'
+  if (error) return 'An error has occurred: ' + error.message
+
+  return (
+    <div>
+      <h1>{data.name}</h1>
+      <p>{data.description}</p>
+      <strong>👀 {data.subscribers_count}</strong>
+      <strong>✨ {data.stargazers_count}</strong>
+      <strong>🍴 {data.forks_count}</strong>
+    </div>
+  )
+}
+```
+
+```vue Vue
+<script setup>
+import { useQuery } from '@tanstack/vue-query'
+
+const { isPending, isError, data, error } = useQuery({
+  queryKey: ['repoData'],
+  queryFn: () =>
+    fetch('https://api.github.com/repos/TanStack/query').then((res) =>
+      res.json(),
+    ),
+})
+</script>
+
+<template>
+  <div v-if="isPending">Loading...</div>
+  <div v-else-if="isError">An error has occurred: {{ error.message }}</div>
+  <div v-else>
+    <h1>{{ data.name }}</h1>
+    <p>{{ data.description }}</p>
+    <strong>👀 {{ data.subscribers_count }}</strong>
+    <strong>✨ {{ data.stargazers_count }}</strong>
+    <strong>🍴 {{ data.forks_count }}</strong>
+  </div>
+</template>
+```
+
+```tsx Solid
+import { QueryClient, QueryClientProvider, createQuery } from '@tanstack/solid-query'
+import { Switch, Match } from 'solid-js'
+
+const queryClient = new QueryClient()
+
+function Example() {
+  const query = createQuery(() => ({
+    queryKey: ['repoData'],
+    queryFn: () =>
+      fetch('https://api.github.com/repos/TanStack/query').then((res) =>
+        res.json(),
+      ),
+  }))
+
+  return (
+    <Switch>
+      <Match when={query.isPending}>Loading...</Match>
+      <Match when={query.isError}>Error: {query.error.message}</Match>
+      <Match when={query.isSuccess}>
+        <div>
+          <h1>{query.data.name}</h1>
+          <p>{query.data.description}</p>
+          <strong>👀 {query.data.subscribers_count}</strong>
+          <strong>✨ {query.data.stargazers_count}</strong>
+          <strong>🍴 {query.data.forks_count}</strong>
+        </div>
+      </Match>
+    </Switch>
+  )
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Example />
+    </QueryClientProvider>
+  )
+}
+```
+
+```typescript Angular
+import { Component, inject } from '@angular/core'
+import { HttpClient } from '@angular/common/http'
+import { injectQuery } from '@tanstack/angular-query-experimental'
+import { lastValueFrom } from 'rxjs'
+
+@Component({
+  selector: 'example',
+  template: `
+    @if (query.isPending()) {
+      Loading...
+    }
+    @if (query.error()) {
+      An error has occurred: {{ query.error().message }}
+    }
+    @if (query.data(); as data) {
+      <h1>{{ data.name }}</h1>
+      <p>{{ data.description }}</p>
+      <strong>👀 {{ data.subscribers_count }}</strong>
+      <strong>✨ {{ data.stargazers_count }}</strong>
+      <strong>🍴 {{ data.forks_count }}</strong>
+    }
+  `,
+})
+export class ExampleComponent {
+  http = inject(HttpClient)
+
+  query = injectQuery(() => ({
+    queryKey: ['repoData'],
+    queryFn: () =>
+      lastValueFrom(
+        this.http.get('https://api.github.com/repos/tanstack/query'),
+      ),
+  }))
+}
+```
+</CodeGroup>
+
+## What's Next?
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install TanStack Query for your framework
+  </Card>
+  
+  <Card title="Quick Start" icon="rocket" href="/quick-start">
+    Get started with a working example
+  </Card>
+  
+  <Card title="Comparison" icon="scale-balanced" href="/comparison">
+    See how TanStack Query compares to alternatives
+  </Card>
+</CardGroup>

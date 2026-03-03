@@ -1,0 +1,364 @@
+---
+title: usePrefetchInfiniteQuery
+description: React hook for prefetching infinite queries during component render
+---
+
+The `usePrefetchInfiniteQuery` hook is used to prefetch an infinite query during component render. It checks if the query data already exists in the cache, and if not, it prefetches the first page.
+
+## Import
+
+```tsx
+import { usePrefetchInfiniteQuery } from '@tanstack/react-query'
+```
+
+## Signature
+
+```tsx
+function usePrefetchInfiniteQuery<
+  TQueryFnData = unknown,
+  TError = DefaultError,
+  TData = TQueryFnData,
+  TQueryKey extends QueryKey = QueryKey,
+  TPageParam = unknown,
+>(
+  options: FetchInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>,
+  queryClient?: QueryClient,
+): void
+```
+
+## Type Parameters
+
+- `TQueryFnData` - The type of data returned by each page of the query function
+- `TError` - The type of error that can be thrown (defaults to `DefaultError`)
+- `TData` - The type of data returned after transformation (defaults to `TQueryFnData`)
+- `TQueryKey` - The type of the query key (defaults to `QueryKey`)
+- `TPageParam` - The type of the page parameter
+
+## Parameters
+
+### options
+
+Type: `FetchInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>`
+
+The prefetch infinite query configuration object with the following required properties:
+
+#### queryKey
+
+- **Type:** `TQueryKey`
+- **Required:** Yes
+
+A unique identifier for the query.
+
+```tsx
+queryKey: ['projects']
+queryKey: ['posts', userId]
+```
+
+#### queryFn
+
+- **Type:** `(context: QueryFunctionContext<TQueryKey, TPageParam>) => Promise<TQueryFnData>`
+- **Required:** Yes
+
+The function that fetches each page.
+
+```tsx
+queryFn: async ({ pageParam }) => {
+  const response = await fetch(`/api/projects?cursor=${pageParam}`)
+  return response.json()
+}
+```
+
+#### initialPageParam
+
+- **Type:** `TPageParam`
+- **Required:** Yes
+
+The default page parameter to use for the first page.
+
+```tsx
+initialPageParam: 0
+```
+
+#### getNextPageParam
+
+- **Type:** `(lastPage: TQueryFnData, allPages: TQueryFnData[], lastPageParam: TPageParam, allPageParams: TPageParam[]) => TPageParam | undefined | null`
+- **Required:** Yes
+
+Function to get the next page parameter.
+
+```tsx
+getNextPageParam: (lastPage) => lastPage.nextCursor
+```
+
+#### getPreviousPageParam
+
+- **Type:** `(firstPage: TQueryFnData, allPages: TQueryFnData[], firstPageParam: TPageParam, allPageParams: TPageParam[]) => TPageParam | undefined | null`
+- **Optional**
+
+Function to get the previous page parameter.
+
+#### staleTime
+
+- **Type:** `number | ((query: Query) => number)`
+- **Optional**
+
+The time in milliseconds after data is considered stale.
+
+#### gcTime
+
+- **Type:** `number | Infinity`
+- **Optional**
+
+The time in milliseconds that unused/inactive cache data remains in memory.
+
+### queryClient
+
+- **Type:** `QueryClient`
+- **Optional**
+
+A custom QueryClient instance.
+
+## Returns
+
+Type: `void`
+
+This hook does not return anything. It only triggers a prefetch if the query data doesn't already exist in the cache.
+
+## Behavior
+
+- Only prefetches if the query data does not already exist in the cache
+- Prefetches only the first page using `initialPageParam`
+- Does not create a subscription to the query
+- Does not cause the component to re-render when data is fetched
+- Useful for prefetching paginated data for routes or components that will be rendered soon
+
+## Examples
+
+### Basic Prefetch
+
+```tsx
+import { usePrefetchInfiniteQuery } from '@tanstack/react-query'
+
+function HomePage() {
+  // Prefetch the first page of projects
+  usePrefetchInfiniteQuery({
+    queryKey: ['projects'],
+    queryFn: async ({ pageParam }) => {
+      const response = await fetch(`/api/projects?cursor=${pageParam}`)
+      return response.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+
+  return (
+    <div>
+      <h1>Home Page</h1>
+      <Link to="/projects">View Projects</Link>
+    </div>
+  )
+}
+```
+
+### Prefetch on Hover
+
+```tsx
+import { usePrefetchInfiniteQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
+
+function Navigation() {
+  const [shouldPrefetch, setShouldPrefetch] = useState(false)
+
+  if (shouldPrefetch) {
+    usePrefetchInfiniteQuery({
+      queryKey: ['feed'],
+      queryFn: ({ pageParam }) => fetchFeed(pageParam),
+      initialPageParam: 0,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+    })
+  }
+
+  return (
+    <Link
+      to="/feed"
+      onMouseEnter={() => setShouldPrefetch(true)}
+    >
+      Feed
+    </Link>
+  )
+}
+```
+
+### Prefetch User's Posts
+
+```tsx
+import { usePrefetchInfiniteQuery } from '@tanstack/react-query'
+
+function UserCard({ userId }: { userId: number }) {
+  // Prefetch the first page of this user's posts
+  usePrefetchInfiniteQuery({
+    queryKey: ['posts', userId],
+    queryFn: async ({ pageParam }) => {
+      const response = await fetch(
+        `/api/users/${userId}/posts?page=${pageParam}`
+      )
+      return response.json()
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) => {
+      return lastPage.hasMore ? allPages.length + 1 : undefined
+    },
+  })
+
+  return (
+    <div>
+      <h2>User {userId}</h2>
+      <Link to={`/users/${userId}/posts`}>View Posts</Link>
+    </div>
+  )
+}
+```
+
+### Conditional Prefetch
+
+```tsx
+import { usePrefetchInfiniteQuery } from '@tanstack/react-query'
+
+function Dashboard({ shouldPrefetchActivity }: Props) {
+  if (shouldPrefetchActivity) {
+    usePrefetchInfiniteQuery({
+      queryKey: ['activity'],
+      queryFn: ({ pageParam }) => fetchActivity(pageParam),
+      initialPageParam: 0,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+    })
+  }
+
+  return <div>{/* Dashboard content */}</div>
+}
+```
+
+### Prefetch with Bi-directional Pagination
+
+```tsx
+import { usePrefetchInfiniteQuery } from '@tanstack/react-query'
+
+function Timeline() {
+  usePrefetchInfiniteQuery({
+    queryKey: ['messages'],
+    queryFn: async ({ pageParam }) => {
+      const response = await fetch(`/api/messages?cursor=${pageParam}`)
+      return response.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    getPreviousPageParam: (firstPage) => firstPage.prevCursor,
+  })
+
+  return (
+    <div>
+      <Link to="/messages">View Messages</Link>
+    </div>
+  )
+}
+```
+
+### Prefetch Multiple Infinite Queries
+
+```tsx
+import { usePrefetchInfiniteQuery } from '@tanstack/react-query'
+
+function DiscoverPage() {
+  // Prefetch trending posts
+  usePrefetchInfiniteQuery({
+    queryKey: ['posts', 'trending'],
+    queryFn: ({ pageParam }) => fetchTrendingPosts(pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+
+  // Prefetch new posts
+  usePrefetchInfiniteQuery({
+    queryKey: ['posts', 'new'],
+    queryFn: ({ pageParam }) => fetchNewPosts(pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+
+  return <div>Discover Page</div>
+}
+```
+
+### Use in Route Loaders
+
+```tsx
+import { usePrefetchInfiniteQuery } from '@tanstack/react-query'
+
+function ProjectsLayout() {
+  // Prefetch projects for child routes
+  usePrefetchInfiniteQuery({
+    queryKey: ['projects'],
+    queryFn: async ({ pageParam }) => {
+      const response = await fetch(`/api/projects?page=${pageParam}`)
+      return response.json()
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) => {
+      return lastPage.hasMore ? allPages.length + 1 : undefined
+    },
+  })
+
+  return (
+    <div>
+      <nav>{/* Navigation */}</nav>
+      <Outlet />
+    </div>
+  )
+}
+```
+
+### Smart Prefetching
+
+```tsx
+import { usePrefetchInfiniteQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+
+function CategoryList() {
+  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null)
+
+  // Prefetch items when user hovers over a category
+  if (hoveredCategory !== null) {
+    usePrefetchInfiniteQuery({
+      queryKey: ['items', hoveredCategory],
+      queryFn: ({ pageParam }) =>
+        fetchItemsByCategory(hoveredCategory, pageParam),
+      initialPageParam: 0,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+    })
+  }
+
+  return (
+    <div>
+      {categories.map((category) => (
+        <div
+          key={category}
+          onMouseEnter={() => setHoveredCategory(category)}
+          onMouseLeave={() => setHoveredCategory(null)}
+        >
+          <Link to={`/categories/${category}`}>{category}</Link>
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+## Notes
+
+- This hook only prefetches the first page if the query doesn't already exist in the cache
+- Subsequent pages are not prefetched automatically
+- If you need more control over prefetching, use `queryClient.prefetchInfiniteQuery()` directly
+- The hook is designed to be called during render, making it safe to use conditionally
+- Prefetched data follows the same caching rules as regular infinite queries

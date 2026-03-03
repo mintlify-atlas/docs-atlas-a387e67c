@@ -1,0 +1,481 @@
+---
+title: Using TanStack Query for Client State
+description: Manage local client state with TanStack Query for a unified data management approach
+---
+
+While TanStack Query is primarily designed for server state management, it can also be used to manage client-side state. This provides a unified approach to all data in your application.
+
+## Why Use TanStack Query for Client State?
+
+Benefits:
+- **Unified API**: Same patterns for server and client state
+- **Automatic updates**: Reactive updates across components
+- **Optimistic updates**: Built-in support for optimistic UI
+- **DevTools**: Inspect client state alongside server state
+- **Less boilerplate**: No need for separate state management libraries
+
+Trade-offs:
+- Slight overhead for simple state
+- Different mental model than useState/useReducer
+- May be overkill for truly local component state
+
+## Basic Client State
+
+Store and update client state using query and mutation:
+
+```tsx
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+
+// Define client state
+interface ThemeState {
+  mode: 'light' | 'dark'
+}
+
+function useTheme() {
+  const queryClient = useQueryClient()
+
+  const { data: theme } = useQuery({
+    queryKey: ['theme'],
+    queryFn: (): ThemeState => {
+      // Read from localStorage or use default
+      const stored = localStorage.getItem('theme')
+      return stored ? JSON.parse(stored) : { mode: 'light' }
+    },
+    staleTime: Infinity, // Client state never stale
+  })
+
+  const { mutate: setTheme } = useMutation({
+    mutationFn: async (newTheme: ThemeState) => {
+      localStorage.setItem('theme', JSON.stringify(newTheme))
+      return newTheme
+    },
+    onSuccess: (newTheme) => {
+      queryClient.setQueryData(['theme'], newTheme)
+    },
+  })
+
+  return { theme, setTheme }
+}
+
+// Use in components
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme()
+
+  return (
+    <button
+      onClick={() => setTheme({ 
+        mode: theme?.mode === 'light' ? 'dark' : 'light' 
+      })}
+    >
+      Current: {theme?.mode}
+    </button>
+  )
+}
+```
+
+## UI State Management
+
+Manage UI state like modals, sidebars, and filters:
+
+```tsx
+interface UIState {
+  sidebarOpen: boolean
+  activeModal: string | null
+  notifications: Array<{ id: string; message: string }>
+}
+
+const defaultUIState: UIState = {
+  sidebarOpen: false,
+  activeModal: null,
+  notifications: [],
+}
+
+function useUIState() {
+  const queryClient = useQueryClient()
+
+  const { data: ui } = useQuery({
+    queryKey: ['ui'],
+    queryFn: () => defaultUIState,
+    staleTime: Infinity,
+    initialData: defaultUIState,
+  })
+
+  const updateUI = (updates: Partial<UIState>) => {
+    queryClient.setQueryData<UIState>(['ui'], (old) => ({
+      ...old!,
+      ...updates,
+    }))
+  }
+
+  return {
+    ui,
+    openSidebar: () => updateUI({ sidebarOpen: true }),
+    closeSidebar: () => updateUI({ sidebarOpen: false }),
+    openModal: (modal: string) => updateUI({ activeModal: modal }),
+    closeModal: () => updateUI({ activeModal: null }),
+    addNotification: (message: string) => {
+      const id = Date.now().toString()
+      updateUI({
+        notifications: [...(ui?.notifications ?? []), { id, message }],
+      })
+    },
+  }
+}
+
+// Use in components
+function Sidebar() {
+  const { ui, closeSidebar } = useUIState()
+
+  if (!ui?.sidebarOpen) return null
+
+  return (
+    <aside>
+      <button onClick={closeSidebar}>Close</button>
+      {/* Sidebar content */}
+    </aside>
+  )
+}
+
+function Header() {
+  const { openSidebar, addNotification } = useUIState()
+
+  return (
+    <header>
+      <button onClick={openSidebar}>Menu</button>
+      <button onClick={() => addNotification('Hello!')}>Notify</button>
+    </header>
+  )
+}
+```
+
+## Form State
+
+Manage complex form state:
+
+```tsx
+interface FormData {
+  name: string
+  email: string
+  preferences: {
+    newsletter: boolean
+    notifications: boolean
+  }
+}
+
+function useFormState(formId: string) {
+  const queryClient = useQueryClient()
+  const queryKey = ['form', formId]
+
+  const { data: formData } = useQuery({
+    queryKey,
+    queryFn: (): FormData => ({
+      name: '',
+      email: '',
+      preferences: {
+        newsletter: false,
+        notifications: false,
+      },
+    }),
+    staleTime: Infinity,
+  })
+
+  const updateField = <K extends keyof FormData>(
+    field: K,
+    value: FormData[K]
+  ) => {
+    queryClient.setQueryData<FormData>(queryKey, (old) => ({
+      ...old!,
+      [field]: value,
+    }))
+  }
+
+  const resetForm = () => {
+    queryClient.setQueryData<FormData>(queryKey, {
+      name: '',
+      email: '',
+      preferences: {
+        newsletter: false,
+        notifications: false,
+      },
+    })
+  }
+
+  return { formData, updateField, resetForm }
+}
+
+function UserForm() {
+  const { formData, updateField, resetForm } = useFormState('userProfile')
+
+  return (
+    <form>
+      <input
+        value={formData?.name ?? ''}
+        onChange={(e) => updateField('name', e.target.value)}
+      />
+      <input
+        type="email"
+        value={formData?.email ?? ''}
+        onChange={(e) => updateField('email', e.target.value)}
+      />
+      <label>
+        <input
+          type="checkbox"
+          checked={formData?.preferences.newsletter ?? false}
+          onChange={(e) =>
+            updateField('preferences', {
+              ...formData!.preferences,
+              newsletter: e.target.checked,
+            })
+          }
+        />
+        Subscribe to newsletter
+      </label>
+      <button type="button" onClick={resetForm}>
+        Reset
+      </button>
+    </form>
+  )
+}
+```
+
+## Selection State
+
+Manage selected items in lists:
+
+```tsx
+function useSelection<T extends { id: string }>(key: string) {
+  const queryClient = useQueryClient()
+  const queryKey = ['selection', key]
+
+  const { data: selectedIds } = useQuery({
+    queryKey,
+    queryFn: (): Set<string> => new Set(),
+    staleTime: Infinity,
+  })
+
+  const toggleItem = (id: string) => {
+    queryClient.setQueryData<Set<string>>(queryKey, (old) => {
+      const newSet = new Set(old)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+
+  const selectAll = (ids: string[]) => {
+    queryClient.setQueryData<Set<string>>(queryKey, new Set(ids))
+  }
+
+  const clearSelection = () => {
+    queryClient.setQueryData<Set<string>>(queryKey, new Set())
+  }
+
+  return {
+    selectedIds: selectedIds ?? new Set<string>(),
+    toggleItem,
+    selectAll,
+    clearSelection,
+    isSelected: (id: string) => selectedIds?.has(id) ?? false,
+  }
+}
+
+function TodoList({ todos }: { todos: Todo[] }) {
+  const { selectedIds, toggleItem, selectAll, clearSelection, isSelected } =
+    useSelection('todos')
+
+  return (
+    <div>
+      <button onClick={() => selectAll(todos.map((t) => t.id))}>
+        Select All
+      </button>
+      <button onClick={clearSelection}>Clear Selection</button>
+      <div>{selectedIds.size} selected</div>
+      {todos.map((todo) => (
+        <div key={todo.id}>
+          <input
+            type="checkbox"
+            checked={isSelected(todo.id)}
+            onChange={() => toggleItem(todo.id)}
+          />
+          {todo.title}
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+## Undo/Redo State
+
+Implement undo/redo with client state:
+
+```tsx
+interface HistoryState<T> {
+  past: T[]
+  present: T
+  future: T[]
+}
+
+function useHistory<T>(key: string, initialState: T) {
+  const queryClient = useQueryClient()
+  const queryKey = ['history', key]
+
+  const { data: history } = useQuery({
+    queryKey,
+    queryFn: (): HistoryState<T> => ({
+      past: [],
+      present: initialState,
+      future: [],
+    }),
+    staleTime: Infinity,
+  })
+
+  const setState = (newState: T) => {
+    queryClient.setQueryData<HistoryState<T>>(queryKey, (old) => ({
+      past: old ? [...old.past, old.present] : [],
+      present: newState,
+      future: [],
+    }))
+  }
+
+  const undo = () => {
+    queryClient.setQueryData<HistoryState<T>>(queryKey, (old) => {
+      if (!old || old.past.length === 0) return old!
+      const previous = old.past[old.past.length - 1]
+      return {
+        past: old.past.slice(0, -1),
+        present: previous,
+        future: [old.present, ...old.future],
+      }
+    })
+  }
+
+  const redo = () => {
+    queryClient.setQueryData<HistoryState<T>>(queryKey, (old) => {
+      if (!old || old.future.length === 0) return old!
+      const next = old.future[0]
+      return {
+        past: [...old.past, old.present],
+        present: next,
+        future: old.future.slice(1),
+      }
+    })
+  }
+
+  return {
+    state: history?.present ?? initialState,
+    setState,
+    undo,
+    redo,
+    canUndo: (history?.past.length ?? 0) > 0,
+    canRedo: (history?.future.length ?? 0) > 0,
+  }
+}
+
+function DrawingApp() {
+  const { state, setState, undo, redo, canUndo, canRedo } = useHistory(
+    'drawing',
+    { color: 'black', size: 5 }
+  )
+
+  return (
+    <div>
+      <button onClick={undo} disabled={!canUndo}>
+        Undo
+      </button>
+      <button onClick={redo} disabled={!canRedo}>
+        Redo
+      </button>
+      <input
+        type="color"
+        value={state.color}
+        onChange={(e) => setState({ ...state, color: e.target.value })}
+      />
+      <input
+        type="range"
+        value={state.size}
+        onChange={(e) => setState({ ...state, size: Number(e.target.value) })}
+      />
+    </div>
+  )
+}
+```
+
+## Syncing with URL
+
+Sync client state with URL parameters:
+
+```tsx
+import { useSearchParams } from 'react-router-dom'
+
+function useFilterState() {
+  const queryClient = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const filters = {
+    category: searchParams.get('category') ?? 'all',
+    sort: searchParams.get('sort') ?? 'recent',
+  }
+
+  // Also store in query cache for consistency
+  useQuery({
+    queryKey: ['filters'],
+    queryFn: () => filters,
+    initialData: filters,
+    staleTime: Infinity,
+  })
+
+  const setFilters = (newFilters: Partial<typeof filters>) => {
+    const updated = { ...filters, ...newFilters }
+    setSearchParams(updated)
+    queryClient.setQueryData(['filters'], updated)
+  }
+
+  return { filters, setFilters }
+}
+```
+
+<Warning>
+**When NOT to Use TanStack Query for Client State**
+
+Don't use TanStack Query for:
+- Simple component-local state (use useState)
+- Temporary UI state that doesn't need global access
+- State that changes very frequently (e.g., mouse position)
+- State that doesn't benefit from reactivity across components
+
+```tsx
+// Bad: Overkill for simple local state
+function Counter() {
+  const { data: count } = useQuery({
+    queryKey: ['count'],
+    queryFn: () => 0,
+  })
+  // Just use useState!
+}
+
+// Good: Use TanStack Query for shared state
+function useShoppingCart() {
+  const { data: cart } = useQuery({
+    queryKey: ['cart'],
+    queryFn: () => [],
+    staleTime: Infinity,
+  })
+  // Multiple components need this
+}
+```
+</Warning>
+
+## Best Practices
+
+1. **Set `staleTime: Infinity`** - Client state doesn't become stale
+2. **Use `initialData`** - Provide default values immediately
+3. **Namespace query keys** - Prefix client state keys (e.g., `['client', 'theme']`)
+4. **Persist important state** - Sync with localStorage when needed
+5. **Use for shared state** - Best for state used across multiple components
+6. **Keep mutations simple** - Client state updates don't need async mutations
+7. **Leverage DevTools** - Inspect and debug client state alongside server state
+8. **Consider alternatives** - For simple cases, useState/useContext may be better

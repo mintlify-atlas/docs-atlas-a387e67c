@@ -1,0 +1,324 @@
+---
+title: Initial Query Data
+description: Provide initial data to queries for instant rendering and optimized user experience
+---
+
+Initial query data allows you to provide data to a query before it fetches for the first time. This is useful for displaying cached data from lists, server-rendered data, or previously fetched data.
+
+## Basic Usage
+
+Provide initial data directly to a query:
+
+```tsx
+function Post({ postId }: { postId: number }) {
+  const { data } = useQuery({
+    queryKey: ['post', postId],
+    queryFn: () => fetchPost(postId),
+    initialData: {
+      id: postId,
+      title: 'Loading...',
+      body: '',
+    },
+  })
+
+  return (
+    <div>
+      <h1>{data.title}</h1>
+      <p>{data.body}</p>
+    </div>
+  )
+}
+```
+
+## From Another Query
+
+Use data from a list query as initial data for a detail query:
+
+```tsx
+interface Post {
+  id: number
+  title: string
+  body: string
+}
+
+function PostDetail({ postId }: { postId: number }) {
+  const queryClient = useQueryClient()
+
+  const { data } = useQuery({
+    queryKey: ['post', postId],
+    queryFn: () => fetchPost(postId),
+    initialData: () => {
+      // Get the post from the 'posts' query cache
+      const posts = queryClient.getQueryData<Post[]>(['posts'])
+      return posts?.find(post => post.id === postId)
+    },
+  })
+
+  return (
+    <div>
+      <h1>{data?.title}</h1>
+      <p>{data?.body}</p>
+    </div>
+  )
+}
+```
+
+This pattern provides instant rendering when navigating from a list to a detail page, then refetches in the background for fresh data.
+
+## With initialDataUpdatedAt
+
+When using initial data from cache, specify when that data was fetched to enable proper staleness checking:
+
+```tsx
+function PostDetail({ postId }: { postId: number }) {
+  const queryClient = useQueryClient()
+
+  const { data, isStale } = useQuery({
+    queryKey: ['post', postId],
+    queryFn: () => fetchPost(postId),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    initialData: () => {
+      const posts = queryClient.getQueryData<Post[]>(['posts'])
+      return posts?.find(post => post.id === postId)
+    },
+    initialDataUpdatedAt: () => {
+      // Get the timestamp of when the 'posts' query was last updated
+      return queryClient.getQueryState(['posts'])?.dataUpdatedAt
+    },
+  })
+
+  // If the posts query data is still fresh, the query won't refetch
+  return <div>{data?.title}</div>
+}
+```
+
+## Initial Data from Server
+
+When using server-side rendering, provide server-fetched data as initial data:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function Post({ serverPost }: { serverPost: Post }) {
+  const { data } = useQuery({
+    queryKey: ['post', serverPost.id],
+    queryFn: () => fetchPost(serverPost.id),
+    initialData: serverPost,
+    // Mark when this server data was fetched
+    initialDataUpdatedAt: Date.now(),
+  })
+
+  return <div>{data.title}</div>
+}
+```
+
+### Next.js Pages Router Example
+
+```tsx
+import { dehydrate, QueryClient, useQuery } from '@tanstack/react-query'
+
+export async function getServerSideProps(context) {
+  const { id } = context.params
+  const post = await fetchPost(id)
+
+  return {
+    props: {
+      post,
+    },
+  }
+}
+
+export default function PostPage({ post }: { post: Post }) {
+  const { data } = useQuery({
+    queryKey: ['post', post.id],
+    queryFn: () => fetchPost(post.id),
+    initialData: post,
+  })
+
+  return (
+    <div>
+      <h1>{data.title}</h1>
+      <p>{data.body}</p>
+    </div>
+  )
+}
+```
+
+## Initial Data vs Placeholder Data
+
+Initial data and placeholder data serve different purposes:
+
+| Feature | Initial Data | Placeholder Data |
+|---------|-------------|------------------|
+| Persisted to cache | Yes | No |
+| Counts as "success" state | Yes | No (shows as "pending") |
+| Triggers background refetch | Yes, if stale | Always |
+| Use case | Real but potentially stale data | Temporary loading state |
+
+```tsx
+// Initial data: Used as real data
+useQuery({
+  queryKey: ['post', postId],
+  queryFn: fetchPost,
+  initialData: cachedPost, // Treated as real data
+})
+
+// Placeholder data: Used as loading state
+useQuery({
+  queryKey: ['post', postId],
+  queryFn: fetchPost,
+  placeholderData: { title: 'Loading...', body: '' }, // Just a placeholder
+})
+```
+
+## Conditional Initial Data
+
+Only provide initial data when it exists:
+
+```tsx
+function PostDetail({ postId }: { postId: number }) {
+  const queryClient = useQueryClient()
+
+  const { data, status } = useQuery({
+    queryKey: ['post', postId],
+    queryFn: () => fetchPost(postId),
+    initialData: () => {
+      const posts = queryClient.getQueryData<Post[]>(['posts'])
+      return posts?.find(post => post.id === postId)
+    },
+  })
+
+  // If initialData found a post, status will be 'success'
+  // Otherwise, status will be 'pending' until fetch completes
+  return status === 'pending' ? (
+    <div>Loading...</div>
+  ) : (
+    <div>{data.title}</div>
+  )
+}
+```
+
+## Transforming Initial Data
+
+Transform initial data to match the expected format:
+
+```tsx
+interface PostSummary {
+  id: number
+  title: string
+}
+
+interface PostDetail extends PostSummary {
+  body: string
+  comments: Comment[]
+}
+
+function PostDetail({ postId }: { postId: number }) {
+  const queryClient = useQueryClient()
+
+  const { data } = useQuery({
+    queryKey: ['post', postId],
+    queryFn: () => fetchPostDetail(postId),
+    initialData: () => {
+      const summary = queryClient.getQueryData<PostSummary>(['postSummary', postId])
+      if (!summary) return undefined
+      
+      // Transform summary to partial detail
+      return {
+        ...summary,
+        body: '',
+        comments: [],
+      } as PostDetail
+    },
+  })
+
+  return <div>{data?.title}</div>
+}
+```
+
+## Setting Initial Data Imperatively
+
+Set initial data for a query before it's used:
+
+```tsx
+import { useQueryClient } from '@tanstack/react-query'
+
+function PostsList() {
+  const queryClient = useQueryClient()
+  const { data: posts } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  const handlePostClick = (post: Post) => {
+    // Pre-populate the detail query cache
+    queryClient.setQueryData(['post', post.id], post)
+    
+    // Navigate to detail page
+    // The detail page will have instant data
+    navigate(`/posts/${post.id}`)
+  }
+
+  return (
+    <ul>
+      {posts?.map(post => (
+        <li key={post.id} onClick={() => handlePostClick(post)}>
+          {post.title}
+        </li>
+      ))}
+    </ul>
+  )
+}
+```
+
+<Warning>
+**Initial Data Must Match Query Type**
+
+The initial data must match the expected return type of your query function:
+
+```tsx
+// Bad: Types don't match
+useQuery({
+  queryKey: ['post', 1],
+  queryFn: (): Promise<Post> => fetchPost(1),
+  initialData: { title: 'Hello' }, // Missing required Post fields!
+})
+
+// Good: Full type compatibility
+useQuery({
+  queryKey: ['post', 1],
+  queryFn: (): Promise<Post> => fetchPost(1),
+  initialData: {
+    id: 1,
+    title: 'Hello',
+    body: 'World',
+  } as Post,
+})
+```
+</Warning>
+
+## Initial Data Function
+
+The initial data value can be a function that returns the data:
+
+```tsx
+useQuery({
+  queryKey: ['post', postId],
+  queryFn: () => fetchPost(postId),
+  // Function is called lazily when the query is created
+  initialData: () => {
+    console.log('Computing initial data')
+    return getPostFromCache(postId)
+  },
+})
+```
+
+## Best Practices
+
+1. **Use for instant rendering** - Provide initial data when navigating from list to detail views
+2. **Set `initialDataUpdatedAt`** - Always specify when initial data was fetched for proper staleness
+3. **Keep data fresh** - Initial data should refetch if it's older than `staleTime`
+4. **Type safety** - Ensure initial data matches the query's return type
+5. **Prefer over placeholder data** - When you have real data available, use initial data
+6. **Imperative population** - Use `setQueryData` to populate cache before navigation
+7. **Server-side rendering** - Leverage initial data for SSR to avoid waterfall requests

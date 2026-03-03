@@ -1,0 +1,414 @@
+---
+title: useMutation
+description: React hook for performing async mutations like creating, updating, or deleting data
+---
+
+The `useMutation` hook is used to create, update, or delete data. Unlike queries, mutations are typically used to perform side effects on the server.
+
+## Import
+
+```tsx
+import { useMutation } from '@tanstack/react-query'
+```
+
+## Signature
+
+```tsx
+function useMutation<
+  TData = unknown,
+  TError = DefaultError,
+  TVariables = void,
+  TOnMutateResult = unknown,
+>(
+  options: UseMutationOptions<TData, TError, TVariables, TOnMutateResult>,
+  queryClient?: QueryClient,
+): UseMutationResult<TData, TError, TVariables, TOnMutateResult>
+```
+
+## Type Parameters
+
+- `TData` - The type of data returned by the mutation function
+- `TError` - The type of error that can be thrown (defaults to `DefaultError`)
+- `TVariables` - The type of variables passed to the mutation function
+- `TOnMutateResult` - The type of data returned by the `onMutate` callback
+
+## Parameters
+
+### options
+
+Type: `UseMutationOptions<TData, TError, TVariables, TOnMutateResult>`
+
+The mutation configuration object with the following properties:
+
+#### mutationFn
+
+- **Type:** `(variables: TVariables) => Promise<TData>`
+- **Required:** Yes
+
+The function that performs the mutation. Receives the variables passed to `mutate` or `mutateAsync`.
+
+```tsx
+mutationFn: async (newTodo) => {
+  const response = await fetch('/api/todos', {
+    method: 'POST',
+    body: JSON.stringify(newTodo),
+  })
+  return response.json()
+}
+```
+
+#### mutationKey
+
+- **Type:** `unknown[]`
+- **Optional**
+
+An optional mutation key for identifying and tracking the mutation.
+
+#### onMutate
+
+- **Type:** `(variables: TVariables) => Promise<TOnMutateResult> | TOnMutateResult`
+
+Callback fired before the mutation function is fired. Useful for optimistic updates.
+
+```tsx
+onMutate: async (newTodo) => {
+  await queryClient.cancelQueries({ queryKey: ['todos'] })
+  const previousTodos = queryClient.getQueryData(['todos'])
+  queryClient.setQueryData(['todos'], (old) => [...old, newTodo])
+  return { previousTodos }
+}
+```
+
+#### onSuccess
+
+- **Type:** `(data: TData, variables: TVariables, context: TOnMutateResult) => Promise<void> | void`
+
+Callback fired when the mutation is successful.
+
+```tsx
+onSuccess: (data, variables, context) => {
+  console.log('Todo created:', data)
+}
+```
+
+#### onError
+
+- **Type:** `(error: TError, variables: TVariables, context: TOnMutateResult | undefined) => Promise<void> | void`
+
+Callback fired when the mutation encounters an error.
+
+```tsx
+onError: (error, variables, context) => {
+  if (context?.previousTodos) {
+    queryClient.setQueryData(['todos'], context.previousTodos)
+  }
+}
+```
+
+#### onSettled
+
+- **Type:** `(data: TData | undefined, error: TError | null, variables: TVariables, context: TOnMutateResult | undefined) => Promise<void> | void`
+
+Callback fired when the mutation is either successful or encounters an error.
+
+```tsx
+onSettled: () => {
+  queryClient.invalidateQueries({ queryKey: ['todos'] })
+}
+```
+
+#### retry
+
+- **Type:** `boolean | number | (failureCount: number, error: TError) => boolean`
+- **Default:** `0`
+
+If `false`, failed mutations will not retry. If `true`, failed mutations will retry infinitely. If set to a number, failed mutations will retry until the retry count meets that number.
+
+#### retryDelay
+
+- **Type:** `number | (retryAttempt: number, error: TError) => number`
+
+Determines the delay between retry attempts.
+
+#### gcTime
+
+- **Type:** `number | Infinity`
+- **Default:** `5 * 60 * 1000` (5 minutes)
+
+The time in milliseconds that unused/inactive cache data remains in memory.
+
+#### throwOnError
+
+- **Type:** `boolean | (error: TError) => boolean`
+- **Default:** `false`
+
+Set to `true` to throw errors instead of setting the `error` property.
+
+### queryClient
+
+- **Type:** `QueryClient`
+- **Optional**
+
+A custom QueryClient instance. If not provided, the client from the nearest QueryClientProvider will be used.
+
+## Returns
+
+Type: `UseMutationResult<TData, TError, TVariables, TOnMutateResult>`
+
+The mutation result object with the following properties:
+
+### mutate
+
+- **Type:** `(variables: TVariables, options?: MutateOptions) => void`
+
+The mutation function you can call with variables to trigger the mutation. Catches errors internally.
+
+```tsx
+mutate({ title: 'New Todo' })
+```
+
+### mutateAsync
+
+- **Type:** `(variables: TVariables, options?: MutateOptions) => Promise<TData>`
+
+Similar to `mutate` but returns a promise. Errors must be caught manually.
+
+```tsx
+try {
+  const data = await mutateAsync({ title: 'New Todo' })
+} catch (error) {
+  console.error(error)
+}
+```
+
+### data
+
+- **Type:** `TData | undefined`
+
+The data returned by the last successful mutation.
+
+### error
+
+- **Type:** `TError | null`
+
+The error object if the mutation failed.
+
+### status
+
+- **Type:** `'idle' | 'pending' | 'error' | 'success'`
+
+The status of the mutation:
+- `idle` - The mutation has not been called yet
+- `pending` - The mutation is currently running
+- `error` - The mutation encountered an error
+- `success` - The mutation was successful
+
+### isPending
+
+- **Type:** `boolean`
+
+`true` if the mutation is currently executing.
+
+### isSuccess
+
+- **Type:** `boolean`
+
+`true` if the mutation was successful.
+
+### isError
+
+- **Type:** `boolean`
+
+`true` if the mutation encountered an error.
+
+### isIdle
+
+- **Type:** `boolean`
+
+`true` if the mutation is in an idle state.
+
+### failureCount
+
+- **Type:** `number`
+
+The number of times the mutation has failed.
+
+### failureReason
+
+- **Type:** `TError | null`
+
+The reason for the most recent failure.
+
+### reset
+
+- **Type:** `() => void`
+
+A function to reset the mutation to its initial state.
+
+### variables
+
+- **Type:** `TVariables | undefined`
+
+The variables passed to the mutation function.
+
+## Examples
+
+### Basic Mutation
+
+```tsx
+import { useMutation } from '@tanstack/react-query'
+
+function CreateTodo() {
+  const mutation = useMutation({
+    mutationFn: async (newTodo) => {
+      const response = await fetch('/api/todos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newTodo),
+      })
+      return response.json()
+    },
+    onSuccess: () => {
+      console.log('Todo created successfully!')
+    },
+  })
+
+  return (
+    <button
+      onClick={() => {
+        mutation.mutate({ title: 'New Todo' })
+      }}
+    >
+      Create Todo
+    </button>
+  )
+}
+```
+
+### Mutation with Invalidation
+
+```tsx
+function CreateTodo() {
+  const queryClient = useQueryClient()
+
+  const mutation = useMutation({
+    mutationFn: createTodo,
+    onSuccess: () => {
+      // Invalidate and refetch
+      queryClient.invalidateQueries({ queryKey: ['todos'] })
+    },
+  })
+
+  // ...
+}
+```
+
+### Optimistic Updates
+
+```tsx
+function UpdateTodo() {
+  const queryClient = useQueryClient()
+
+  const mutation = useMutation({
+    mutationFn: updateTodo,
+    onMutate: async (newTodo) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['todos'] })
+
+      // Snapshot the previous value
+      const previousTodos = queryClient.getQueryData(['todos'])
+
+      // Optimistically update to the new value
+      queryClient.setQueryData(['todos'], (old) =>
+        old.map((todo) =>
+          todo.id === newTodo.id ? newTodo : todo
+        )
+      )
+
+      // Return context with the snapshot
+      return { previousTodos }
+    },
+    onError: (err, newTodo, context) => {
+      // Rollback on error
+      queryClient.setQueryData(['todos'], context.previousTodos)
+    },
+    onSettled: () => {
+      // Always refetch after error or success
+      queryClient.invalidateQueries({ queryKey: ['todos'] })
+    },
+  })
+
+  // ...
+}
+```
+
+### Using mutateAsync
+
+```tsx
+function CreateTodo() {
+  const mutation = useMutation({
+    mutationFn: createTodo,
+  })
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    try {
+      const data = await mutation.mutateAsync({
+        title: event.target.title.value,
+      })
+      console.log('Created todo:', data)
+    } catch (error) {
+      console.error('Failed to create todo:', error)
+    }
+  }
+
+  return <form onSubmit={handleSubmit}>{/* ... */}</form>
+}
+```
+
+### Reset Mutation State
+
+```tsx
+function CreateTodo() {
+  const mutation = useMutation({
+    mutationFn: createTodo,
+  })
+
+  return (
+    <div>
+      <button onClick={() => mutation.mutate({ title: 'New Todo' })}>
+        Create Todo
+      </button>
+      {mutation.error && (
+        <div>
+          <p>Error: {mutation.error.message}</p>
+          <button onClick={() => mutation.reset()}>Reset</button>
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+### Mutation with Type Variables
+
+```tsx
+type Todo = { id: number; title: string }
+type CreateTodoVariables = { title: string }
+
+function CreateTodo() {
+  const mutation = useMutation<Todo, Error, CreateTodoVariables>({
+    mutationFn: async (variables) => {
+      const response = await fetch('/api/todos', {
+        method: 'POST',
+        body: JSON.stringify(variables),
+      })
+      return response.json()
+    },
+  })
+
+  // mutation.data is typed as Todo | undefined
+  // mutation.error is typed as Error | null
+  // mutation.mutate expects CreateTodoVariables
+}
+```

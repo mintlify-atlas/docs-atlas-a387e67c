@@ -1,0 +1,567 @@
+---
+title: React Suspense
+description: Integrate TanStack Query with React Suspense for declarative loading states
+---
+
+React Suspense allows you to declaratively handle loading states. TanStack Query provides first-class Suspense support through `useSuspenseQuery` and `useSuspenseInfiniteQuery`.
+
+## Basic Suspense Query
+
+Use `useSuspenseQuery` instead of `useQuery`:
+
+```tsx
+import React from 'react'
+import { useSuspenseQuery } from '@tanstack/react-query'
+
+function Projects() {
+  // No need to check for loading state
+  const { data, isFetching } = useSuspenseQuery({
+    queryKey: ['projects'],
+    queryFn: fetchProjects,
+  })
+
+  return (
+    <div>
+      <h1>TanStack Repositories {isFetching ? <Spinner /> : null}</h1>
+      {data.map((project) => (
+        <p key={project.full_name}>{project.name}</p>
+      ))}
+    </div>
+  )
+}
+
+// Wrap with Suspense boundary
+function App() {
+  return (
+    <React.Suspense fallback={<h1>Loading projects...</h1>}>
+      <Projects />
+    </React.Suspense>
+  )
+}
+```
+
+**Key differences from `useQuery`:**
+- `data` is always defined (never `undefined`)
+- No `isLoading` or `isPending` states
+- Suspense boundary shows `fallback` during initial load
+- Use `isFetching` for background updates
+
+## Real Example from Source
+
+Here's the actual TanStack Query Suspense example:
+
+```tsx
+import React, { lazy } from 'react'
+import ReactDOM from 'react-dom/client'
+import {
+  QueryClient,
+  QueryClientProvider,
+  QueryErrorResetBoundary,
+} from '@tanstack/react-query'
+import { ErrorBoundary } from 'react-error-boundary'
+
+import { fetchProjects } from './queries'
+import Button from './components/Button'
+
+const Projects = lazy(() => import('./components/Projects'))
+const Project = lazy(() => import('./components/Project'))
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 0,
+    },
+  },
+})
+
+function Example() {
+  const queryClient = useQueryClient()
+  const [showProjects, setShowProjects] = React.useState(false)
+  const [activeProject, setActiveProject] = React.useState<string | null>(null)
+
+  return (
+    <>
+      <Button
+        onClick={() => {
+          setShowProjects((old) => {
+            if (!old) {
+              queryClient.prefetchQuery({
+                queryKey: ['projects'],
+                queryFn: fetchProjects,
+              })
+            }
+            return !old
+          })
+        }}
+      >
+        {showProjects ? 'Hide Projects' : 'Show Projects'}
+      </Button>
+
+      <hr />
+
+      <QueryErrorResetBoundary>
+        {({ reset }) => (
+          <ErrorBoundary
+            fallbackRender={({ error, resetErrorBoundary }) => (
+              <div>
+                There was an error!{' '}
+                <Button onClick={() => resetErrorBoundary()}>Try again</Button>
+                <pre style={{ whiteSpace: 'normal' }}>{error.message}</pre>
+              </div>
+            )}
+            onReset={reset}
+          >
+            {showProjects ? (
+              <React.Suspense fallback={<h1>Loading projects...</h1>}>
+                {activeProject ? (
+                  <Project
+                    activeProject={activeProject}
+                    setActiveProject={setActiveProject}
+                  />
+                ) : (
+                  <Projects setActiveProject={setActiveProject} />
+                )}
+              </React.Suspense>
+            ) : null}
+          </ErrorBoundary>
+        )}
+      </QueryErrorResetBoundary>
+    </>
+  )
+}
+```
+
+## Error Boundaries with Suspense
+
+Handle errors using Error Boundaries:
+
+```tsx
+import React from 'react'
+import { QueryErrorResetBoundary } from '@tanstack/react-query'
+import { ErrorBoundary } from 'react-error-boundary'
+
+function App() {
+  return (
+    <QueryErrorResetBoundary>
+      {({ reset }) => (
+        <ErrorBoundary
+          onReset={reset}
+          fallbackRender={({ error, resetErrorBoundary }) => (
+            <div>
+              <h2>Something went wrong!</h2>
+              <pre>{error.message}</pre>
+              <button onClick={resetErrorBoundary}>Try again</button>
+            </div>
+          )}
+        >
+          <React.Suspense fallback={<div>Loading...</div>}>
+            <DataComponent />
+          </React.Suspense>
+        </ErrorBoundary>
+      )}
+    </QueryErrorResetBoundary>
+  )
+}
+
+function DataComponent() {
+  const { data } = useSuspenseQuery({
+    queryKey: ['data'],
+    queryFn: fetchData,
+  })
+
+  return <div>{data.title}</div>
+}
+```
+
+**QueryErrorResetBoundary** provides a `reset` function that resets all queries that errored during the error boundary's lifecycle.
+
+## Multiple Suspense Queries
+
+Multiple `useSuspenseQuery` hooks in one component:
+
+```tsx
+import { useSuspenseQuery } from '@tanstack/react-query'
+
+function Dashboard() {
+  // All three queries must resolve before component renders
+  const { data: user } = useSuspenseQuery({
+    queryKey: ['user'],
+    queryFn: fetchUser,
+  })
+
+  const { data: posts } = useSuspenseQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  const { data: stats } = useSuspenseQuery({
+    queryKey: ['stats'],
+    queryFn: fetchStats,
+  })
+
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <Stats data={stats} />
+      <Posts posts={posts} />
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <React.Suspense fallback={<Loading />}>
+      <Dashboard />
+    </React.Suspense>
+  )
+}
+```
+
+All queries run in parallel, but the Suspense boundary waits for all to complete.
+
+## useSuspenseQueries
+
+For dynamic arrays of queries:
+
+```tsx
+import { useSuspenseQueries } from '@tanstack/react-query'
+
+function UserProfiles({ userIds }: { userIds: string[] }) {
+  const users = useSuspenseQueries({
+    queries: userIds.map(id => ({
+      queryKey: ['user', id],
+      queryFn: () => fetchUser(id),
+    })),
+  })
+
+  return (
+    <div>
+      {users.map((userQuery) => (
+        <div key={userQuery.data.id}>
+          {userQuery.data.name}
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+## Suspense with Prefetching
+
+Prefetch before showing Suspense boundary to avoid fallback:
+
+```tsx
+import React from 'react'
+import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+
+function App() {
+  const queryClient = useQueryClient()
+  const [show, setShow] = React.useState(false)
+
+  const handleShow = () => {
+    // Prefetch before revealing Suspense boundary
+    queryClient.prefetchQuery({
+      queryKey: ['projects'],
+      queryFn: fetchProjects,
+    })
+
+    // Delay showing to allow prefetch to complete
+    setTimeout(() => setShow(true), 100)
+  }
+
+  return (
+    <div>
+      <button onClick={handleShow}>Show Projects</button>
+
+      {show && (
+        <React.Suspense fallback={<div>Loading...</div>}>
+          <Projects />
+        </React.Suspense>
+      )}
+    </div>
+  )
+}
+
+function Projects() {
+  const { data } = useSuspenseQuery({
+    queryKey: ['projects'],
+    queryFn: fetchProjects,
+  })
+
+  return (
+    <div>
+      {data.map(project => <div key={project.id}>{project.name}</div>)}
+    </div>
+  )
+}
+```
+
+## Nested Suspense Boundaries
+
+Create granular loading states:
+
+```tsx
+import React from 'react'
+import { useSuspenseQuery } from '@tanstack/react-query'
+
+function App() {
+  return (
+    <React.Suspense fallback={<PageLoader />}>
+      <Layout>
+        <React.Suspense fallback={<SidebarLoader />}>
+          <Sidebar />
+        </React.Suspense>
+
+        <React.Suspense fallback={<ContentLoader />}>
+          <Content />
+        </React.Suspense>
+      </Layout>
+    </React.Suspense>
+  )
+}
+
+function Sidebar() {
+  const { data } = useSuspenseQuery({
+    queryKey: ['navigation'],
+    queryFn: fetchNavigation,
+  })
+
+  return <nav>{/* ... */}</nav>
+}
+
+function Content() {
+  const { data } = useSuspenseQuery({
+    queryKey: ['content'],
+    queryFn: fetchContent,
+  })
+
+  return <main>{/* ... */}</main>
+}
+```
+
+## Suspense Infinite Queries
+
+Use `useSuspenseInfiniteQuery` for infinite scroll:
+
+```tsx
+import { useSuspenseInfiniteQuery } from '@tanstack/react-query'
+
+function Posts() {
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useSuspenseInfiniteQuery({
+    queryKey: ['posts'],
+    queryFn: async ({ pageParam }) => {
+      const res = await fetch(`/api/posts?cursor=${pageParam}`)
+      return res.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+
+  return (
+    <div>
+      {data.pages.map((page, i) => (
+        <React.Fragment key={i}>
+          {page.posts.map((post) => (
+            <article key={post.id}>
+              <h2>{post.title}</h2>
+            </article>
+          ))}
+        </React.Fragment>
+      ))}
+
+      {hasNextPage && (
+        <button
+          onClick={() => fetchNextPage()}
+          disabled={isFetchingNextPage}
+        >
+          {isFetchingNextPage ? 'Loading...' : 'Load More'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <React.Suspense fallback={<div>Loading posts...</div>}>
+      <Posts />
+    </React.Suspense>
+  )
+}
+```
+
+## Dependent Queries with Suspense
+
+Chain queries while maintaining Suspense:
+
+```tsx
+import { useSuspenseQuery } from '@tanstack/react-query'
+
+function UserPosts({ userId }: { userId: string }) {
+  // First query
+  const { data: user } = useSuspenseQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  })
+
+  // Second query depends on first
+  const { data: posts } = useSuspenseQuery({
+    queryKey: ['posts', user.id],
+    queryFn: () => fetchPosts(user.id),
+  })
+
+  return (
+    <div>
+      <h1>{user.name}'s Posts</h1>
+      {posts.map(post => <Post key={post.id} post={post} />)}
+    </div>
+  )
+}
+
+// Wrap in Suspense
+function App() {
+  return (
+    <React.Suspense fallback={<Loading />}>
+      <UserPosts userId="123" />
+    </React.Suspense>
+  )
+}
+```
+
+## Lazy Loading Components
+
+Combine with React.lazy:
+
+```tsx
+import React, { lazy } from 'react'
+
+const ProjectDetails = lazy(() => import('./ProjectDetails'))
+
+function App() {
+  const [selectedId, setSelectedId] = React.useState<string | null>(null)
+
+  return (
+    <div>
+      <ProjectList onSelect={setSelectedId} />
+
+      {selectedId && (
+        <React.Suspense fallback={<div>Loading details...</div>}>
+          <ProjectDetails id={selectedId} />
+        </React.Suspense>
+      )}
+    </div>
+  )
+}
+```
+
+## Transition to Suspense from useQuery
+
+```tsx
+// Before: useQuery
+function OldComponent() {
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ['data'],
+    queryFn: fetchData,
+  })
+
+  if (isLoading) return <Loading />
+  if (isError) return <Error message={error.message} />
+
+  return <div>{data.title}</div>
+}
+
+// After: useSuspenseQuery
+function NewComponent() {
+  const { data } = useSuspenseQuery({
+    queryKey: ['data'],
+    queryFn: fetchData,
+  })
+
+  return <div>{data.title}</div>
+}
+
+function App() {
+  return (
+    <ErrorBoundary fallback={<Error />}>
+      <React.Suspense fallback={<Loading />}>
+        <NewComponent />
+      </React.Suspense>
+    </ErrorBoundary>
+  )
+}
+```
+
+## Best Practices
+
+### 1. Always Wrap with Error Boundary
+
+```tsx
+// ✅ Good
+<ErrorBoundary fallback={<Error />}>
+  <React.Suspense fallback={<Loading />}>
+    <Component />
+  </React.Suspense>
+</ErrorBoundary>
+
+// ❌ Bad - errors will crash the app
+<React.Suspense fallback={<Loading />}>
+  <Component />
+</React.Suspense>
+```
+
+### 2. Use QueryErrorResetBoundary
+
+```tsx
+import { QueryErrorResetBoundary } from '@tanstack/react-query'
+
+<QueryErrorResetBoundary>
+  {({ reset }) => (
+    <ErrorBoundary onReset={reset} fallback={<Error />}>
+      <React.Suspense fallback={<Loading />}>
+        <Component />
+      </React.Suspense>
+    </ErrorBoundary>
+  )}
+</QueryErrorResetBoundary>
+```
+
+### 3. Show Background Updates
+
+```tsx
+function Component() {
+  const { data, isFetching } = useSuspenseQuery({
+    queryKey: ['data'],
+    queryFn: fetchData,
+  })
+
+  return (
+    <div>
+      {data.title}
+      {isFetching && <span>Updating...</span>}
+    </div>
+  )
+}
+```
+
+<Warning>
+  **Important**: `useSuspenseQuery` will throw promises during initial load, causing the nearest Suspense boundary to show its fallback. Always ensure you have a Suspense boundary above any component using `useSuspenseQuery`, or your app will error.
+</Warning>
+
+## When to Use Suspense
+
+**Use Suspense when:**
+- Building with React 18+
+- You want declarative loading states
+- Using Server Components (Next.js App Router)
+- Building data-driven UI with consistent loading patterns
+
+**Stick with useQuery when:**
+- You need fine-grained loading control
+- Loading states are complex or conditional
+- Supporting React < 18
+- Showing multiple loading states simultaneously

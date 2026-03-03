@@ -1,0 +1,639 @@
+---
+title: GraphQL
+description: Using TanStack Query with GraphQL clients and best practices
+---
+
+## Overview
+
+TanStack Query works seamlessly with GraphQL clients. While it's agnostic to the data fetching layer, it provides excellent patterns for managing GraphQL queries, mutations, and cache updates.
+
+## GraphQL Clients
+
+TanStack Query supports all GraphQL clients:
+
+- **graphql-request** - Minimal GraphQL client
+- **Apollo Client** - Full-featured GraphQL client (can be used alongside TanStack Query)
+- **urql** - Lightweight GraphQL client
+- **Native fetch** - With GraphQL query strings
+
+## Using graphql-request
+
+### Basic Setup
+
+```tsx
+import { request, gql } from 'graphql-request'
+import { useQuery } from '@tanstack/react-query'
+
+const endpoint = 'https://api.example.com/graphql'
+
+interface Post {
+  id: number
+  title: string
+  body: string
+}
+
+function usePosts() {
+  return useQuery({
+    queryKey: ['posts'],
+    queryFn: async () => {
+      const { posts } = await request<{ posts: { data: Post[] } }>(
+        endpoint,
+        gql`
+          query {
+            posts {
+              data {
+                id
+                title
+                body
+              }
+            }
+          }
+        `
+      )
+      return posts.data
+    },
+  })
+}
+```
+
+### Query with Variables
+
+```tsx
+import { request, gql } from 'graphql-request'
+import { useQuery } from '@tanstack/react-query'
+
+interface PostQueryVariables {
+  id: number
+}
+
+interface PostQueryResponse {
+  post: Post
+}
+
+function usePost(id: number) {
+  return useQuery({
+    queryKey: ['post', id],
+    queryFn: async () => {
+      const { post } = await request<PostQueryResponse, PostQueryVariables>(
+        endpoint,
+        gql`
+          query GetPost($id: Int!) {
+            post(id: $id) {
+              id
+              title
+              body
+            }
+          }
+        `,
+        { id }
+      )
+      return post
+    },
+  })
+}
+```
+
+## GraphQL Mutations
+
+### Basic Mutation
+
+```tsx
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { request, gql } from 'graphql-request'
+
+interface CreatePostInput {
+  title: string
+  body: string
+}
+
+interface CreatePostResponse {
+  createPost: Post
+}
+
+function useCreatePost() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: CreatePostInput) => {
+      const { createPost } = await request<CreatePostResponse>(
+        endpoint,
+        gql`
+          mutation CreatePost($title: String!, $body: String!) {
+            createPost(title: $title, body: $body) {
+              id
+              title
+              body
+            }
+          }
+        `,
+        input
+      )
+      return createPost
+    },
+    onSuccess: () => {
+      // Invalidate and refetch posts
+      queryClient.invalidateQueries({ queryKey: ['posts'] })
+    },
+  })
+}
+```
+
+### Optimistic Updates
+
+```tsx
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+
+function useUpdatePost() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (post: Partial<Post> & { id: number }) => {
+      const { updatePost } = await request(
+        endpoint,
+        gql`
+          mutation UpdatePost($id: Int!, $title: String, $body: String) {
+            updatePost(id: $id, title: $title, body: $body) {
+              id
+              title
+              body
+            }
+          }
+        `,
+        post
+      )
+      return updatePost
+    },
+    onMutate: async (updatedPost) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['posts'] })
+
+      // Snapshot the previous value
+      const previousPosts = queryClient.getQueryData<Post[]>(['posts'])
+
+      // Optimistically update
+      if (previousPosts) {
+        queryClient.setQueryData<Post[]>(
+          ['posts'],
+          previousPosts.map((post) =>
+            post.id === updatedPost.id ? { ...post, ...updatedPost } : post
+          )
+        )
+      }
+
+      return { previousPosts }
+    },
+    onError: (err, updatedPost, context) => {
+      // Rollback on error
+      if (context?.previousPosts) {
+        queryClient.setQueryData(['posts'], context.previousPosts)
+      }
+    },
+    onSettled: () => {
+      // Refetch after mutation
+      queryClient.invalidateQueries({ queryKey: ['posts'] })
+    },
+  })
+}
+```
+
+## Query Cancellation with GraphQL
+
+```tsx
+import { request } from 'graphql-request'
+import { useQuery } from '@tanstack/react-query'
+
+function usePosts() {
+  return useQuery({
+    queryKey: ['posts'],
+    queryFn: async ({ signal }) => {
+      const { posts } = await request({
+        url: endpoint,
+        document: gql`
+          query {
+            posts {
+              data {
+                id
+                title
+              }
+            }
+          }
+        `,
+        signal, // Pass AbortSignal for cancellation
+      })
+      return posts.data
+    },
+  })
+}
+```
+
+## Pagination with GraphQL
+
+### Cursor-Based Pagination
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/react-query'
+import { request, gql } from 'graphql-request'
+
+interface PostsConnection {
+  edges: Array<{
+    node: Post
+    cursor: string
+  }>
+  pageInfo: {
+    hasNextPage: boolean
+    endCursor: string
+  }
+}
+
+function useInfinitePosts() {
+  return useInfiniteQuery({
+    queryKey: ['posts'],
+    queryFn: async ({ pageParam }) => {
+      const { posts } = await request<{ posts: PostsConnection }>(
+        endpoint,
+        gql`
+          query GetPosts($after: String) {
+            posts(first: 10, after: $after) {
+              edges {
+                node {
+                  id
+                  title
+                  body
+                }
+                cursor
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }
+        `,
+        { after: pageParam }
+      )
+      return posts
+    },
+    initialPageParam: undefined,
+    getNextPageParam: (lastPage) => {
+      return lastPage.pageInfo.hasNextPage
+        ? lastPage.pageInfo.endCursor
+        : undefined
+    },
+  })
+}
+
+function PostList() {
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useInfinitePosts()
+
+  return (
+    <div>
+      {data?.pages.map((page) =>
+        page.edges.map(({ node }) => (
+          <div key={node.id}>
+            <h3>{node.title}</h3>
+            <p>{node.body}</p>
+          </div>
+        ))
+      )}
+      <button
+        onClick={() => fetchNextPage()}
+        disabled={!hasNextPage || isFetchingNextPage}
+      >
+        {isFetchingNextPage ? 'Loading...' : 'Load More'}
+      </button>
+    </div>
+  )
+}
+```
+
+### Offset-Based Pagination
+
+```tsx
+function usePaginatedPosts(page: number, limit: number) {
+  return useQuery({
+    queryKey: ['posts', { page, limit }],
+    queryFn: async () => {
+      const { posts } = await request(
+        endpoint,
+        gql`
+          query GetPosts($offset: Int!, $limit: Int!) {
+            posts(offset: $offset, limit: $limit) {
+              data {
+                id
+                title
+                body
+              }
+              total
+            }
+          }
+        `,
+        { offset: page * limit, limit }
+      )
+      return posts
+    },
+  })
+}
+```
+
+## Fragments and Reusable Queries
+
+```tsx
+import { gql } from 'graphql-request'
+
+// Define fragments
+const POST_FRAGMENT = gql`
+  fragment PostFields on Post {
+    id
+    title
+    body
+    author {
+      id
+      name
+    }
+  }
+`
+
+// Use in queries
+const GET_POSTS_QUERY = gql`
+  ${POST_FRAGMENT}
+  query GetPosts {
+    posts {
+      data {
+        ...PostFields
+      }
+    }
+  }
+`
+
+const GET_POST_QUERY = gql`
+  ${POST_FRAGMENT}
+  query GetPost($id: Int!) {
+    post(id: $id) {
+      ...PostFields
+      comments {
+        id
+        text
+      }
+    }
+  }
+`
+
+// Create reusable query functions
+const queryFns = {
+  posts: async () => {
+    const { posts } = await request(endpoint, GET_POSTS_QUERY)
+    return posts.data
+  },
+  post: async (id: number) => {
+    const { post } = await request(endpoint, GET_POST_QUERY, { id })
+    return post
+  },
+}
+
+function usePosts() {
+  return useQuery({
+    queryKey: ['posts'],
+    queryFn: queryFns.posts,
+  })
+}
+
+function usePost(id: number) {
+  return useQuery({
+    queryKey: ['post', id],
+    queryFn: () => queryFns.post(id),
+  })
+}
+```
+
+## Cache Management
+
+### Updating Single Item from List
+
+```tsx
+function useCreatePost() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: createPost,
+    onSuccess: (newPost) => {
+      // Add to list cache
+      queryClient.setQueryData<Post[]>(['posts'], (old) => {
+        return old ? [...old, newPost] : [newPost]
+      })
+
+      // Set individual post cache
+      queryClient.setQueryData(['post', newPost.id], newPost)
+    },
+  })
+}
+```
+
+### Invalidating Related Queries
+
+```tsx
+function useDeletePost() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (id: number) => {
+      await request(
+        endpoint,
+        gql`
+          mutation DeletePost($id: Int!) {
+            deletePost(id: $id)
+          }
+        `,
+        { id }
+      )
+    },
+    onSuccess: (_, deletedId) => {
+      // Remove from lists
+      queryClient.setQueriesData<Post[]>({ queryKey: ['posts'] }, (old) => {
+        return old?.filter((post) => post.id !== deletedId)
+      })
+
+      // Remove individual query
+      queryClient.removeQueries({ queryKey: ['post', deletedId] })
+
+      // Invalidate any queries that might reference this post
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          return query.queryKey.includes(deletedId)
+        },
+      })
+    },
+  })
+}
+```
+
+## Subscriptions
+
+For GraphQL subscriptions, use a separate subscription client and update the cache:
+
+```tsx
+import { createClient } from 'graphql-ws'
+import { useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+
+const wsClient = createClient({
+  url: 'wss://api.example.com/graphql',
+})
+
+function usePostSubscription() {
+  const queryClient = useQueryClient()
+
+  useEffect(() => {
+    const unsubscribe = wsClient.subscribe(
+      {
+        query: `
+          subscription OnPostCreated {
+            postCreated {
+              id
+              title
+              body
+            }
+          }
+        `,
+      },
+      {
+        next: ({ data }) => {
+          // Update cache when new post is created
+          queryClient.setQueryData<Post[]>(['posts'], (old) => {
+            return old ? [data.postCreated, ...old] : [data.postCreated]
+          })
+        },
+        error: (error) => console.error(error),
+        complete: () => console.log('Subscription complete'),
+      }
+    )
+
+    return () => unsubscribe()
+  }, [queryClient])
+}
+```
+
+## Error Handling
+
+### GraphQL Errors
+
+```tsx
+import { ClientError } from 'graphql-request'
+
+function usePosts() {
+  return useQuery({
+    queryKey: ['posts'],
+    queryFn: async () => {
+      try {
+        const { posts } = await request(endpoint, GET_POSTS_QUERY)
+        return posts.data
+      } catch (error) {
+        if (error instanceof ClientError) {
+          // Handle GraphQL errors
+          console.error('GraphQL errors:', error.response.errors)
+          // Network error
+          if (error.response.status === 401) {
+            // Handle authentication error
+          }
+        }
+        throw error
+      }
+    },
+  })
+}
+```
+
+## TypeScript with GraphQL
+
+### Using GraphQL Code Generator
+
+```bash
+npm install -D @graphql-codegen/cli @graphql-codegen/typescript
+```
+
+```yaml
+# codegen.yml
+schema: https://api.example.com/graphql
+documents: './src/**/*.graphql'
+generates:
+  ./src/generated/graphql.ts:
+    plugins:
+      - typescript
+      - typescript-operations
+      - typescript-react-query
+    config:
+      fetcher: graphql-request
+```
+
+```tsx
+import { useGetPostsQuery } from './generated/graphql'
+
+function PostList() {
+  // Fully typed with generated types
+  const { data, isLoading } = useGetPostsQuery()
+
+  if (isLoading) return <div>Loading...</div>
+
+  return (
+    <div>
+      {data?.posts.map((post) => (
+        <div key={post.id}>{post.title}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+## Best Practices
+
+1. **Use fragments** - Reuse field selections across queries
+2. **Normalize cache keys** - Use consistent query key patterns
+3. **Handle GraphQL errors** - Distinguish between network and GraphQL errors
+4. **Type your operations** - Use GraphQL Code Generator for type safety
+5. **Optimize queries** - Request only needed fields
+6. **Implement pagination** - Use cursor-based for infinite scroll
+7. **Update cache strategically** - Choose between invalidation and manual updates
+8. **Use subscriptions sparingly** - For real-time updates only when needed
+9. **Handle loading states** - Show appropriate UI during fetches
+10. **Test with mocked data** - Use MSW or similar for testing
+
+## Performance Optimization
+
+### Batching Requests
+
+```tsx
+import { batchRequests } from 'graphql-request'
+
+const queries = [
+  { document: GET_POSTS_QUERY },
+  { document: GET_USERS_QUERY },
+]
+
+const data = await batchRequests(endpoint, queries)
+```
+
+### Prefetching
+
+```tsx
+function PostsPage() {
+  const queryClient = useQueryClient()
+
+  const handleMouseEnter = (postId: number) => {
+    // Prefetch on hover
+    queryClient.prefetchQuery({
+      queryKey: ['post', postId],
+      queryFn: () => queryFns.post(postId),
+    })
+  }
+
+  return (
+    <div>
+      {posts.map((post) => (
+        <div key={post.id} onMouseEnter={() => handleMouseEnter(post.id)}>
+          {post.title}
+        </div>
+      ))}
+    </div>
+  )
+}
+```

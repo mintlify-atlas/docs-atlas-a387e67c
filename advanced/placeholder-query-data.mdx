@@ -1,0 +1,359 @@
+---
+title: Placeholder Query Data
+description: Show placeholder data while queries are loading to improve perceived performance
+---
+
+Placeholder data allows you to show temporary data to users while the actual query is fetching. Unlike initial data, placeholder data is never persisted to the cache and is only used for display purposes.
+
+## Basic Usage
+
+```tsx
+function Todos() {
+  const { data, isPlaceholderData } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    placeholderData: [],
+  })
+
+  return (
+    <div>
+      {isPlaceholderData && <div>Loading fresh data...</div>}
+      <ul>
+        {data.map(todo => (
+          <li key={todo.id}>{todo.title}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+## Placeholder vs Initial Data
+
+Understanding the differences is crucial:
+
+| Feature | Placeholder Data | Initial Data |
+|---------|------------------|-------------|
+| Persisted to cache | No | Yes |
+| Query status | `pending` | `success` |
+| `isPlaceholderData` flag | `true` | `false` |
+| Refetch behavior | Always fetches | Only if stale |
+| Use case | Temporary UI state | Real cached data |
+
+```tsx
+// Placeholder: Shows loading state, always refetches
+const { data, status, isPlaceholderData } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  placeholderData: [],
+})
+console.log(status) // 'pending' until real data arrives
+console.log(isPlaceholderData) // true until real data arrives
+
+// Initial: Shows success state, refetches only if stale
+const { data, status } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  initialData: [],
+})
+console.log(status) // 'success' immediately
+```
+
+## keepPreviousData Pattern
+
+The most common use of placeholder data is keeping previous data visible during pagination or filter changes:
+
+```tsx
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+
+function Projects() {
+  const [page, setPage] = useState(0)
+
+  const { data, isPlaceholderData } = useQuery({
+    queryKey: ['projects', page],
+    queryFn: () => fetchProjects(page),
+    placeholderData: keepPreviousData,
+  })
+
+  return (
+    <div>
+      {data.projects.map(project => (
+        <div key={project.id}>{project.name}</div>
+      ))}
+      <div>
+        <button
+          onClick={() => setPage(old => Math.max(old - 1, 0))}
+          disabled={page === 0}
+        >
+          Previous Page
+        </button>
+        <button
+          onClick={() => setPage(old => (data?.hasMore ? old + 1 : old))}
+          // Disable next page while loading to prevent double-clicks
+          disabled={isPlaceholderData || !data?.hasMore}
+        >
+          Next Page
+        </button>
+      </div>
+      {isPlaceholderData && <div>Loading new page...</div>}
+    </div>
+  )
+}
+```
+
+The `keepPreviousData` function is a built-in helper that returns the previous data while the new query is loading.
+
+## Placeholder Data Function
+
+Provide a function to compute placeholder data dynamically:
+
+```tsx
+function Post({ postId }: { postId: number }) {
+  const queryClient = useQueryClient()
+
+  const { data, isPlaceholderData } = useQuery({
+    queryKey: ['post', postId],
+    queryFn: () => fetchPost(postId),
+    placeholderData: () => {
+      // Use cached data from the posts list if available
+      const posts = queryClient.getQueryData<Post[]>(['posts'])
+      return posts?.find(post => post.id === postId)
+    },
+  })
+
+  return (
+    <div>
+      {isPlaceholderData && <div className="opacity-50">Refreshing...</div>}
+      <h1>{data?.title}</h1>
+      <p>{data?.body}</p>
+    </div>
+  )
+}
+```
+
+## Pagination with Prefetching
+
+Combine placeholder data with prefetching for the smoothest pagination experience:
+
+```tsx
+function Projects() {
+  const queryClient = useQueryClient()
+  const [page, setPage] = useState(0)
+
+  const { data, isPlaceholderData } = useQuery({
+    queryKey: ['projects', page],
+    queryFn: () => fetchProjects(page),
+    placeholderData: keepPreviousData,
+    staleTime: 5000,
+  })
+
+  // Prefetch the next page
+  useEffect(() => {
+    if (!isPlaceholderData && data?.hasMore) {
+      queryClient.prefetchQuery({
+        queryKey: ['projects', page + 1],
+        queryFn: () => fetchProjects(page + 1),
+      })
+    }
+  }, [data, isPlaceholderData, page, queryClient])
+
+  return (
+    <div>
+      {data.projects.map(project => (
+        <div key={project.id}>{project.name}</div>
+      ))}
+      <button
+        onClick={() => setPage(old => old + 1)}
+        disabled={isPlaceholderData || !data?.hasMore}
+      >
+        Next Page
+      </button>
+    </div>
+  )
+}
+```
+
+<Warning>
+**Don't Use Placeholder Data for Business Logic**
+
+Placeholder data is for display only. Don't use it in mutations or business logic:
+
+```tsx
+// Bad: Using placeholder data in a mutation
+const { data } = useQuery({
+  queryKey: ['user'],
+  queryFn: fetchUser,
+  placeholderData: { name: '', email: '' },
+})
+
+const mutation = useMutation({
+  mutationFn: () => updateUser(data.email), // May use placeholder!
+})
+
+// Good: Check if data is real
+const { data, isPlaceholderData } = useQuery({
+  queryKey: ['user'],
+  queryFn: fetchUser,
+  placeholderData: { name: '', email: '' },
+})
+
+const mutation = useMutation({
+  mutationFn: () => {
+    if (isPlaceholderData) {
+      throw new Error('Cannot update placeholder data')
+    }
+    return updateUser(data.email)
+  },
+})
+```
+</Warning>
+
+## Filtered Lists
+
+Show previous results while applying filters:
+
+```tsx
+function TodoList() {
+  const [filter, setFilter] = useState<'all' | 'completed' | 'active'>('all')
+
+  const { data, isPlaceholderData } = useQuery({
+    queryKey: ['todos', filter],
+    queryFn: () => fetchTodos(filter),
+    placeholderData: keepPreviousData,
+  })
+
+  return (
+    <div>
+      <div>
+        <button onClick={() => setFilter('all')}>All</button>
+        <button onClick={() => setFilter('active')}>Active</button>
+        <button onClick={() => setFilter('completed')}>Completed</button>
+      </div>
+      {isPlaceholderData && <div>Updating...</div>}
+      <ul style={{ opacity: isPlaceholderData ? 0.5 : 1 }}>
+        {data?.map(todo => (
+          <li key={todo.id}>{todo.title}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+## Search Results
+
+Provide smooth transitions between search results:
+
+```tsx
+function SearchResults() {
+  const [searchTerm, setSearchTerm] = useState('')
+  const debouncedSearchTerm = useDebounce(searchTerm, 300)
+
+  const { data, isPlaceholderData } = useQuery({
+    queryKey: ['search', debouncedSearchTerm],
+    queryFn: () => searchAPI(debouncedSearchTerm),
+    placeholderData: keepPreviousData,
+    enabled: debouncedSearchTerm.length > 0,
+  })
+
+  return (
+    <div>
+      <input
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        placeholder="Search..."
+      />
+      {isPlaceholderData && <div>Searching...</div>}
+      <div style={{ opacity: isPlaceholderData ? 0.6 : 1 }}>
+        {data?.results.map(result => (
+          <div key={result.id}>{result.title}</div>
+        ))}
+      </div>
+    </div>
+  )
+}
+```
+
+## Skeleton Placeholders
+
+Combine with skeleton screens for better UX:
+
+```tsx
+interface Project {
+  id: number
+  name: string
+  description: string
+}
+
+const SKELETON_PROJECTS: Project[] = Array(5).fill(null).map((_, i) => ({
+  id: i,
+  name: '████████',
+  description: '████████████████████',
+}))
+
+function Projects() {
+  const { data, isPlaceholderData } = useQuery({
+    queryKey: ['projects'],
+    queryFn: fetchProjects,
+    placeholderData: SKELETON_PROJECTS,
+  })
+
+  return (
+    <div>
+      {data.map(project => (
+        <div 
+          key={project.id}
+          className={isPlaceholderData ? 'skeleton' : ''}
+        >
+          <h3>{project.name}</h3>
+          <p>{project.description}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+## Custom Placeholder Logic
+
+Implement complex placeholder data logic:
+
+```tsx
+function Dashboard({ userId }: { userId: number }) {
+  const queryClient = useQueryClient()
+
+  const { data, isPlaceholderData } = useQuery({
+    queryKey: ['userStats', userId],
+    queryFn: () => fetchUserStats(userId),
+    placeholderData: (previousData, previousQuery) => {
+      // If we have previous data for this user, use it
+      if (previousData && previousQuery?.queryKey[1] === userId) {
+        return previousData
+      }
+      
+      // Otherwise, try to find similar data from cache
+      const allStats = queryClient.getQueriesData<UserStats>({
+        queryKey: ['userStats'],
+      })
+      
+      // Return the most recently updated stats
+      const mostRecent = allStats
+        .sort((a, b) => (b[1]?.updatedAt ?? 0) - (a[1]?.updatedAt ?? 0))[0]
+      
+      return mostRecent?.[1]
+    },
+  })
+
+  return <div>{/* Use data */}</div>
+}
+```
+
+## Best Practices
+
+1. **Use `keepPreviousData` for pagination** - Provides smooth page transitions
+2. **Visual feedback with `isPlaceholderData`** - Show loading indicators or reduce opacity
+3. **Disable actions during placeholder state** - Prevent interactions with stale data
+4. **Prefetch next page** - Combine with prefetching for instant navigation
+5. **Type safety** - Ensure placeholder data matches query return type
+6. **Don't persist placeholder data** - Remember it's temporary, not real cached data
+7. **Use for UI smoothness** - Great for preventing layout shifts and flashing loading states

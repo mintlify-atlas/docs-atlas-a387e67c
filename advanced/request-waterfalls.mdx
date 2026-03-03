@@ -1,0 +1,366 @@
+---
+title: Avoiding Request Waterfalls
+description: Learn how to prevent sequential request chains and optimize parallel data fetching with TanStack Query
+---
+
+Request waterfalls occur when requests are executed sequentially when they could run in parallel. This creates unnecessary delays and slows down your application. TanStack Query provides several strategies to avoid waterfalls.
+
+## Understanding Request Waterfalls
+
+A request waterfall happens when one request must wait for another to complete, creating a chain:
+
+```tsx
+// Waterfall: Film loads after character loads
+function Character({ characterId }: { characterId: string }) {
+  const { data: character } = useQuery({
+    queryKey: ['character', characterId],
+    queryFn: () => getCharacter(characterId),
+  })
+
+  const homeworldId = character?.homeworld
+
+  const { data: homeworld } = useQuery({
+    queryKey: ['homeworld', homeworldId],
+    queryFn: () => getPlanet(homeworldId!),
+    enabled: !!homeworldId, // Waits for character to load
+  })
+
+  // Film queries wait for character, creating a waterfall
+  return (
+    <div>
+      <h2>{character?.name}</h2>
+      <p>Homeworld: {homeworld?.name}</p>
+      {character?.films.map((filmUrl) => (
+        <Film key={filmUrl} filmUrl={filmUrl} />
+      ))}
+    </div>
+  )
+}
+
+function Film({ filmUrl }: { filmUrl: string }) {
+  const filmId = extractId(filmUrl)
+  const { data } = useQuery({
+    queryKey: ['film', filmId],
+    queryFn: () => getFilm(filmId),
+  })
+
+  return <div>{data?.title}</div>
+}
+```
+
+## Strategy 1: Prefetching
+
+Prefetch related data before it's needed, either on hover or during route transitions.
+
+### Prefetch on Hover
+
+```tsx
+import { useQueryClient } from '@tanstack/react-query'
+
+function CharacterList() {
+  const queryClient = useQueryClient()
+  const { data: characters } = useQuery({
+    queryKey: ['characters'],
+    queryFn: getCharacters,
+  })
+
+  return (
+    <ul>
+      {characters?.results.map((char) => (
+        <li
+          key={char.id}
+          onMouseEnter={async () => {
+            // Prefetch character details on hover
+            await queryClient.prefetchQuery({
+              queryKey: ['character', char.id],
+              queryFn: () => getCharacter(char.id),
+              staleTime: 10 * 1000, // Only prefetch if older than 10s
+            })
+          }}
+        >
+          <Link to={`/characters/${char.id}`}>{char.name}</Link>
+        </li>
+      ))}
+    </ul>
+  )
+}
+```
+
+### Prefetch During Navigation
+
+```tsx
+import { useRouter } from 'next/router'
+import { useQueryClient } from '@tanstack/react-query'
+
+function CharacterLink({ characterId }: { characterId: string }) {
+  const router = useRouter()
+  const queryClient = useQueryClient()
+
+  const handleClick = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    
+    // Prefetch before navigating
+    await queryClient.prefetchQuery({
+      queryKey: ['character', characterId],
+      queryFn: () => getCharacter(characterId),
+    })
+    
+    router.push(`/characters/${characterId}`)
+  }
+
+  return (
+    <a href={`/characters/${characterId}`} onClick={handleClick}>
+      View Character
+    </a>
+  )
+}
+```
+
+## Strategy 2: Parallel Queries
+
+Fetch multiple queries at once instead of waiting for dependencies.
+
+### Multiple useQuery Calls
+
+```tsx
+function Dashboard() {
+  // All queries start simultaneously
+  const todosQuery = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+  })
+
+  const projectsQuery = useQuery({
+    queryKey: ['projects'],
+    queryFn: fetchProjects,
+  })
+
+  const usersQuery = useQuery({
+    queryKey: ['users'],
+    queryFn: fetchUsers,
+  })
+
+  if (todosQuery.isPending || projectsQuery.isPending || usersQuery.isPending) {
+    return <div>Loading...</div>
+  }
+
+  return (
+    <div>
+      <TodoList todos={todosQuery.data} />
+      <ProjectList projects={projectsQuery.data} />
+      <UserList users={usersQuery.data} />
+    </div>
+  )
+}
+```
+
+### Using useQueries for Dynamic Parallel Queries
+
+```tsx
+import { useQueries } from '@tanstack/react-query'
+
+function CharacterFilms({ filmUrls }: { filmUrls: string[] }) {
+  const filmIds = filmUrls.map(extractId)
+
+  // Fetch all films in parallel
+  const filmQueries = useQueries({
+    queries: filmIds.map((filmId) => ({
+      queryKey: ['film', filmId],
+      queryFn: () => getFilm(filmId),
+      staleTime: 60 * 1000,
+    })),
+  })
+
+  const isLoading = filmQueries.some(query => query.isPending)
+  const films = filmQueries.map(query => query.data).filter(Boolean)
+
+  if (isLoading) return <div>Loading films...</div>
+
+  return (
+    <ul>
+      {films.map((film) => (
+        <li key={film.episode_id}>
+          {film.episode_id}. {film.title}
+        </li>
+      ))}
+    </ul>
+  )
+}
+```
+
+### Combining Results
+
+```tsx
+function useQueries({
+  queries: [
+    {
+      queryKey: ['posts'],
+      queryFn: fetchPosts,
+    },
+    {
+      queryKey: ['users'],
+      queryFn: fetchUsers,
+    },
+  ],
+  combine: (results) => {
+    return {
+      data: {
+        posts: results[0].data,
+        users: results[1].data,
+      },
+      isPending: results.some(result => result.isPending),
+    }
+  },
+})
+```
+
+## Strategy 3: Initial Data from Cache
+
+Use data from existing queries as initial data for dependent queries.
+
+```tsx
+function CharacterDetail({ characterId }: { characterId: string }) {
+  const queryClient = useQueryClient()
+
+  const { data: character } = useQuery({
+    queryKey: ['character', characterId],
+    queryFn: () => getCharacter(characterId),
+    // Use data from list query if available
+    initialData: () => {
+      const characters = queryClient.getQueryData<Character[]>(['characters'])
+      return characters?.results.find(c => c.id === characterId)
+    },
+  })
+
+  return <div>{character?.name}</div>
+}
+```
+
+## Strategy 4: Server-Side Prefetching
+
+Prefetch queries on the server to eliminate waterfalls entirely.
+
+### Next.js App Router
+
+```tsx
+// app/characters/[id]/page.tsx
+import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
+import { getQueryClient } from '@/app/get-query-client'
+
+export default async function CharacterPage({ 
+  params 
+}: { 
+  params: { id: string } 
+}) {
+  const queryClient = getQueryClient()
+
+  // Prefetch all data on the server in parallel
+  await Promise.all([
+    queryClient.prefetchQuery({
+      queryKey: ['character', params.id],
+      queryFn: () => getCharacter(params.id),
+    }),
+    queryClient.prefetchQuery({
+      queryKey: ['films'],
+      queryFn: getFilms,
+    }),
+  ])
+
+  return (
+    <HydrationBoundary state={dehydrate(queryClient)}>
+      <CharacterDetail characterId={params.id} />
+    </HydrationBoundary>
+  )
+}
+```
+
+### Next.js Pages Router (getServerSideProps)
+
+```tsx
+import { dehydrate, QueryClient } from '@tanstack/react-query'
+
+export async function getServerSideProps(context) {
+  const queryClient = new QueryClient()
+  const { id } = context.params
+
+  await Promise.all([
+    queryClient.prefetchQuery({
+      queryKey: ['character', id],
+      queryFn: () => getCharacter(id),
+    }),
+    queryClient.prefetchQuery({
+      queryKey: ['films'],
+      queryFn: getFilms,
+    }),
+  ])
+
+  return {
+    props: {
+      dehydratedState: dehydrate(queryClient),
+    },
+  }
+}
+```
+
+## Strategy 5: Optimistic IDs
+
+When you know the IDs ahead of time, start fetching immediately.
+
+```tsx
+function Post({ postId }: { postId: number }) {
+  const queryClient = useQueryClient()
+  
+  const { data: post } = useQuery({
+    queryKey: ['post', postId],
+    queryFn: () => getPost(postId),
+  })
+
+  // Immediately fetch comments, don't wait for post
+  const { data: comments } = useQuery({
+    queryKey: ['comments', postId],
+    queryFn: () => getComments(postId),
+  })
+
+  return (
+    <div>
+      <h1>{post?.title}</h1>
+      <p>{post?.body}</p>
+      <h2>Comments</h2>
+      {comments?.map(comment => (
+        <div key={comment.id}>{comment.text}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+<Warning>
+**When Waterfalls Are Acceptable**
+
+Not all sequential requests are bad. Sometimes data truly depends on previous responses:
+
+- Paginated data where you need the next cursor
+- Search results that depend on user input
+- Multi-step forms where each step determines the next
+
+The key is identifying when requests could run in parallel but aren't.
+</Warning>
+
+## Measuring Waterfall Impact
+
+Use browser DevTools Network tab to visualize request timing:
+
+1. Open DevTools → Network tab
+2. Enable "Preserve log" and "Disable cache"
+3. Reload your page
+4. Look for requests starting only after others complete
+5. Calculate total time vs. potential parallel time
+
+## Best Practices
+
+1. **Identify dependencies early** - Map out which data truly depends on other data
+2. **Prefetch aggressively** - Better to prefetch and not use than to create waterfalls
+3. **Use `useQueries` for dynamic lists** - When you have an array of IDs to fetch
+4. **Leverage server-side rendering** - Eliminate client-side waterfalls entirely when possible
+5. **Set appropriate `staleTime`** - Prevent unnecessary refetches when prefetching
+6. **Monitor with DevTools** - Regularly check Network tab for waterfall patterns

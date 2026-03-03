@@ -1,0 +1,293 @@
+---
+title: Installation
+description: Install TanStack Query for React, Vue, Solid, Svelte, or Angular. Learn about compatibility requirements, CDN usage, and recommended tooling.
+---
+
+TanStack Query is available as framework-specific packages that you can install via NPM or use via CDN.
+
+## Choose Your Framework
+
+<Tabs>
+  <Tab title="React">
+    ### NPM Installation
+
+    <CodeGroup>
+    ```bash npm
+    npm i @tanstack/react-query
+    ```
+
+    ```bash pnpm
+    pnpm add @tanstack/react-query
+    ```
+
+    ```bash yarn
+    yarn add @tanstack/react-query
+    ```
+
+    ```bash bun
+    bun add @tanstack/react-query
+    ```
+    </CodeGroup>
+
+    ### Compatibility
+
+    React Query is compatible with **React v18+** and works with both ReactDOM and React Native.
+
+    ### CDN Usage
+
+    If you're not using a module bundler or package manager, you can use TanStack Query via an ESM-compatible CDN:
+
+    ```html
+    <script type="module">
+      import React from 'https://esm.sh/react@18.2.0'
+      import ReactDOM from 'https://esm.sh/react-dom@18.2.0'
+      import { QueryClient } from 'https://esm.sh/@tanstack/react-query'
+    </script>
+    ```
+
+    <Note>
+    You can find instructions on how to use React without JSX in the [React documentation](https://react.dev/reference/react/createElement#creating-an-element-without-jsx).
+    </Note>
+  </Tab>
+
+  <Tab title="Vue">
+    ### NPM Installation
+
+    <CodeGroup>
+    ```bash npm
+    npm i @tanstack/vue-query
+    ```
+
+    ```bash pnpm
+    pnpm add @tanstack/vue-query
+    ```
+
+    ```bash yarn
+    yarn add @tanstack/vue-query
+    ```
+
+    ```bash bun
+    bun add @tanstack/vue-query
+    ```
+    </CodeGroup>
+
+    ### Compatibility
+
+    Vue Query is compatible with **Vue 2.x and 3.x**.
+
+    <Warning>
+    If you are using Vue 2.6, make sure to also setup [@vue/composition-api](https://github.com/vuejs/composition-api).
+    </Warning>
+
+    ### Vue Query Initialization
+
+    Before using Vue Query, you need to initialize it using `VueQueryPlugin`:
+
+    ```typescript
+    import { VueQueryPlugin } from '@tanstack/vue-query'
+
+    app.use(VueQueryPlugin)
+    ```
+
+    ### Composition API Setup
+
+    All examples in the TanStack Query documentation use [`<script setup>`](https://vuejs.org/api/sfc-script-setup.html) syntax.
+
+    <Tip>
+    Vue 2 users can use the `<script setup>` syntax using [this plugin](https://github.com/antfu/unplugin-vue2-script-setup). Check the plugin documentation for installation details.
+    </Tip>
+
+    If you prefer not to use `<script setup>`, you can translate examples to standard Composition API by moving code under a `setup()` function and returning the values used in the template.
+  </Tab>
+
+  <Tab title="Solid">
+    ### NPM Installation
+
+    <CodeGroup>
+    ```bash npm
+    npm i @tanstack/solid-query
+    ```
+
+    ```bash pnpm
+    pnpm add @tanstack/solid-query
+    ```
+
+    ```bash yarn
+    yarn add @tanstack/solid-query
+    ```
+
+    ```bash bun
+    bun add @tanstack/solid-query
+    ```
+    </CodeGroup>
+
+    ### CDN Usage
+
+    If you're not using a module bundler or package manager, you can use TanStack Query via an ESM-compatible CDN:
+
+    ```html
+    <script type="module">
+      import { QueryClient } from 'https://esm.sh/@tanstack/solid-query'
+    </script>
+    ```
+  </Tab>
+
+  <Tab title="Svelte">
+    ### NPM Installation
+
+    <CodeGroup>
+    ```bash npm
+    npm i @tanstack/svelte-query
+    ```
+
+    ```bash pnpm
+    pnpm add @tanstack/svelte-query
+    ```
+
+    ```bash yarn
+    yarn add @tanstack/svelte-query
+    ```
+
+    ```bash bun
+    bun add @tanstack/svelte-query
+    ```
+    </CodeGroup>
+
+    ### Compatibility
+
+    Svelte Query works with **Svelte 3.x and 4.x**.
+  </Tab>
+
+  <Tab title="Angular">
+    ### NPM Installation
+
+    <CodeGroup>
+    ```bash npm
+    npm i @tanstack/angular-query-experimental
+    ```
+
+    ```bash pnpm
+    pnpm add @tanstack/angular-query-experimental
+    ```
+
+    ```bash yarn
+    yarn add @tanstack/angular-query-experimental
+    ```
+
+    ```bash bun
+    bun add @tanstack/angular-query-experimental
+    ```
+    </CodeGroup>
+
+    <Warning>
+    **IMPORTANT:** This library is currently in an experimental stage. Breaking changes will happen in minor AND patch releases. Upgrade carefully. If you use this in production while in experimental stage, please lock your version to a patch-level version to avoid unexpected breaking changes.
+    </Warning>
+
+    ### Compatibility
+
+    Angular Query is compatible with **Angular v16 and higher**.
+  </Tab>
+</Tabs>
+
+## Browser Requirements
+
+TanStack Query is optimized for modern browsers and is compatible with:
+
+```
+Chrome >= 91
+Firefox >= 90
+Edge >= 91
+Safari >= 15
+iOS >= 15
+Opera >= 77
+```
+
+<Note>
+Depending on your environment, you might need to add polyfills. If you want to support older browsers, you need to transpile the library from `node_modules` yourself.
+</Note>
+
+## Devtools Installation (Optional)
+
+TanStack Query includes powerful devtools to help you debug and inspect your queries. Install the devtools package for your framework:
+
+<Tabs>
+  <Tab title="React">
+    ```bash
+    npm i @tanstack/react-query-devtools
+    ```
+  </Tab>
+
+  <Tab title="Vue">
+    ```bash
+    npm i @tanstack/vue-query-devtools
+    ```
+  </Tab>
+
+  <Tab title="Solid">
+    ```bash
+    npm i @tanstack/solid-query-devtools
+    ```
+  </Tab>
+
+  <Tab title="Svelte">
+    ```bash
+    npm i @tanstack/svelte-query-devtools
+    ```
+  </Tab>
+
+  <Tab title="Angular">
+    Angular Query devtools are included in the main package.
+  </Tab>
+</Tabs>
+
+## ESLint Plugin (Recommended)
+
+It is highly recommended to also install the ESLint Plugin Query to help catch bugs and inconsistencies while you code:
+
+<CodeGroup>
+```bash npm
+npm i -D @tanstack/eslint-plugin-query
+```
+
+```bash pnpm
+pnpm add -D @tanstack/eslint-plugin-query
+```
+
+```bash yarn
+yarn add -D @tanstack/eslint-plugin-query
+```
+
+```bash bun
+bun add -D @tanstack/eslint-plugin-query
+```
+</CodeGroup>
+
+The ESLint plugin provides rules that help you:
+
+- Ensure exhaustive dependencies in query functions
+- Maintain consistent property order in queries and mutations
+- Avoid common pitfalls and anti-patterns
+- Follow TanStack Query best practices
+
+<Tip>
+The ESLint plugin can catch many common issues before they become bugs in production, making it an essential tool for any TanStack Query project.
+</Tip>
+
+## TypeScript Support
+
+TanStack Query is written in TypeScript and provides excellent type safety out of the box. No additional packages or configuration needed!
+
+## Next Steps
+
+<Steps>
+  <Step title="Try an Example">
+    Want to see TanStack Query in action before diving in? Try one of our interactive examples:
+    
+    - [Simple Example](https://stackblitz.com/github/TanStack/query/tree/main/examples/react/simple)
+    - [Basic Example](https://stackblitz.com/github/TanStack/query/tree/main/examples/react/basic)
+  </Step>
+
+  <Step title="Continue to Quick Start">
+    Ready to build your first query? Head over to the [Quick Start guide](/quick-start) to see working code examples with queries and mutations.
+  </Step>
+</Steps>

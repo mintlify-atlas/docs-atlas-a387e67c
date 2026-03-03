@@ -1,0 +1,463 @@
+---
+title: Vue Query
+description: Composition API hooks for fetching, caching and updating asynchronous data in Vue applications
+---
+
+# Vue Query
+
+TanStack Vue Query provides composables for managing server state in Vue 3 applications using the Composition API. It handles caching, background updates, and request deduplication automatically.
+
+## Installation
+
+```bash
+npm install @tanstack/vue-query
+# or
+pnpm add @tanstack/vue-query
+# or
+yarn add @tanstack/vue-query
+```
+
+## Quick Start
+
+Install the Vue Query plugin in your application:
+
+```ts
+import { createApp } from 'vue'
+import { VueQueryPlugin } from '@tanstack/vue-query'
+import App from './App.vue'
+
+const app = createApp(App)
+app.use(VueQueryPlugin)
+app.mount('#app')
+```
+
+With custom options:
+
+```ts
+import { VueQueryPlugin, QueryClient } from '@tanstack/vue-query'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      gcTime: 1000 * 60 * 60 * 24, // 24 hours
+    },
+  },
+})
+
+app.use(VueQueryPlugin, {
+  queryClient,
+})
+```
+
+## Core Composables
+
+### useQuery
+
+Fetch and cache data with automatic reactivity:
+
+```vue
+<script setup lang="ts">
+import { useQuery } from '@tanstack/vue-query'
+
+type Post = {
+  id: number
+  title: string
+  body: string
+}
+
+const { isPending, isError, data, error, isFetching, refetch } = useQuery({
+  queryKey: ['posts'],
+  queryFn: async (): Promise<Post[]> => {
+    const response = await fetch('https://api.example.com/posts')
+    return await response.json()
+  },
+})
+</script>
+
+<template>
+  <div v-if="isPending">Loading...</div>
+  <div v-else-if="isError">Error: {{ error.message }}</div>
+  <div v-else-if="data">
+    <ul>
+      <li v-for="post in data" :key="post.id">
+        {{ post.title }}
+      </li>
+    </ul>
+    <div v-if="isFetching">Background Updating...</div>
+  </div>
+</template>
+```
+
+### With Options API
+
+Vue Query also works with the Options API:
+
+```vue
+<script lang="ts">
+import { defineComponent } from 'vue'
+import { useQuery } from '@tanstack/vue-query'
+
+export default defineComponent({
+  setup() {
+    const { isPending, isError, isFetching, data, error, refetch } = useQuery({
+      queryKey: ['posts'],
+      queryFn: fetchPosts,
+    })
+
+    return { isPending, isError, isFetching, data, error, refetch }
+  },
+})
+</script>
+
+<template>
+  <div v-if="isPending">Loading...</div>
+  <div v-else-if="isError">Error: {{ error }}</div>
+  <div v-else-if="data">
+    <ul>
+      <li v-for="item in data" :key="item.id">{{ item.title }}</li>
+    </ul>
+  </div>
+</template>
+```
+
+### useMutation
+
+Perform mutations and update cache:
+
+```vue
+<script setup lang="ts">
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+
+const queryClient = useQueryClient()
+
+const mutation = useMutation({
+  mutationFn: (newPost: { title: string; body: string }) => {
+    return fetch('https://api.example.com/posts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newPost),
+    })
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['posts'] })
+  },
+})
+
+const createPost = () => {
+  mutation.mutate({ title: 'New Post', body: 'Content' })
+}
+</script>
+
+<template>
+  <button @click="createPost" :disabled="mutation.isPending">
+    {{ mutation.isPending ? 'Creating...' : 'Create Post' }}
+  </button>
+  <div v-if="mutation.isError">Error: {{ mutation.error.message }}</div>
+  <div v-if="mutation.isSuccess">Post created!</div>
+</template>
+```
+
+### useInfiniteQuery
+
+Implement infinite scrolling:
+
+```vue
+<script setup lang="ts">
+import { useInfiniteQuery } from '@tanstack/vue-query'
+
+const {
+  data,
+  fetchNextPage,
+  hasNextPage,
+  isFetchingNextPage,
+  isPending,
+} = useInfiniteQuery({
+  queryKey: ['posts'],
+  queryFn: async ({ pageParam = 0 }) => {
+    const res = await fetch(`/api/posts?cursor=${pageParam}`)
+    return res.json()
+  },
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
+</script>
+
+<template>
+  <div v-if="isPending">Loading...</div>
+  <div v-else>
+    <div v-for="page in data?.pages" :key="page.id">
+      <div v-for="post in page.posts" :key="post.id">
+        {{ post.title }}
+      </div>
+    </div>
+    <button
+      @click="fetchNextPage()"
+      :disabled="!hasNextPage || isFetchingNextPage"
+    >
+      {{ isFetchingNextPage ? 'Loading...' : 'Load More' }}
+    </button>
+  </div>
+</template>
+```
+
+### useQueries
+
+Execute multiple queries in parallel:
+
+```vue
+<script setup lang="ts">
+import { useQueries } from '@tanstack/vue-query'
+import { computed } from 'vue'
+
+const userIds = [1, 2, 3]
+
+const queries = computed(() =>
+  userIds.map((id) => ({
+    queryKey: ['user', id],
+    queryFn: () => fetchUser(id),
+  }))
+)
+
+const results = useQueries({ queries })
+</script>
+
+<template>
+  <div v-for="(result, i) in results" :key="i">
+    <div v-if="result.isPending">Loading...</div>
+    <div v-else-if="result.data">{{ result.data.name }}</div>
+  </div>
+</template>
+```
+
+## Vue-Specific Features
+
+### Reactive Query Keys
+
+Query keys automatically react to Vue ref changes:
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useQuery } from '@tanstack/vue-query'
+
+const postId = ref(1)
+
+const { data } = useQuery({
+  queryKey: ['post', postId],
+  queryFn: () => fetchPost(postId.value),
+})
+
+// Query automatically refetches when postId changes
+const nextPost = () => {
+  postId.value++
+}
+</script>
+```
+
+### Reactive Options
+
+All query options are reactive:
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useQuery } from '@tanstack/vue-query'
+
+const enabled = ref(false)
+
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  enabled, // Reactive ref
+})
+
+// Start fetching
+const startFetching = () => {
+  enabled.value = true
+}
+</script>
+```
+
+### useQueryClient
+
+Access the QueryClient for manual cache updates:
+
+```vue
+<script setup lang="ts">
+import { useQueryClient } from '@tanstack/vue-query'
+
+const queryClient = useQueryClient()
+
+// Get cached data
+const cachedPosts = queryClient.getQueryData(['posts'])
+
+// Manually update cache
+const updateCache = () => {
+  queryClient.setQueryData(['posts'], newData)
+}
+
+// Invalidate queries
+const refresh = () => {
+  queryClient.invalidateQueries({ queryKey: ['posts'] })
+}
+</script>
+```
+
+## Helper Functions
+
+### queryOptions
+
+Create reusable, type-safe query options:
+
+```ts
+import { queryOptions } from '@tanstack/vue-query'
+
+const postQueryOptions = (id: number) => queryOptions({
+  queryKey: ['post', id],
+  queryFn: () => fetchPost(id),
+})
+
+const { data } = useQuery(postQueryOptions(1))
+```
+
+### infiniteQueryOptions
+
+Create type-safe infinite query options:
+
+```ts
+import { infiniteQueryOptions } from '@tanstack/vue-query'
+
+const postsInfiniteOptions = infiniteQueryOptions({
+  queryKey: ['posts'],
+  queryFn: ({ pageParam = 0 }) => fetchPosts(pageParam),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
+```
+
+## State Management Composables
+
+### useIsFetching
+
+Track global fetching state:
+
+```vue
+<script setup lang="ts">
+import { useIsFetching } from '@tanstack/vue-query'
+
+const isFetching = useIsFetching()
+</script>
+
+<template>
+  <div v-if="isFetching > 0">Queries running: {{ isFetching }}</div>
+</template>
+```
+
+### useIsMutating
+
+Track global mutation state:
+
+```vue
+<script setup lang="ts">
+import { useIsMutating } from '@tanstack/vue-query'
+
+const isMutating = useIsMutating()
+</script>
+
+<template>
+  <div v-if="isMutating > 0">Mutations running: {{ isMutating }}</div>
+</template>
+```
+
+### useMutationState
+
+Access all mutation states:
+
+```vue
+<script setup lang="ts">
+import { useMutationState } from '@tanstack/vue-query'
+
+const pendingMutations = useMutationState({
+  filters: { status: 'pending' },
+  select: (mutation) => mutation.state.variables,
+})
+</script>
+
+<template>
+  <div>Pending mutations: {{ pendingMutations.length }}</div>
+</template>
+```
+
+## Devtools
+
+Install the devtools for debugging:
+
+```bash
+npm install @tanstack/vue-query-devtools
+```
+
+```vue
+<script setup lang="ts">
+import { VueQueryDevtools } from '@tanstack/vue-query-devtools'
+</script>
+
+<template>
+  <div>
+    <YourApp />
+    <VueQueryDevtools />
+  </div>
+</template>
+```
+
+## SSR Support (Nuxt 3)
+
+Vue Query works seamlessly with Nuxt 3:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['@tanstack/vue-query-nuxt'],
+})
+```
+
+```vue
+<script setup lang="ts">
+import { useQuery } from '@tanstack/vue-query'
+
+const { data } = await useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+})
+</script>
+```
+
+## TypeScript Support
+
+Vue Query provides full type inference:
+
+```ts
+type Post = { id: number; title: string; body: string }
+type PostError = { message: string }
+
+const { data, error } = useQuery<Post, PostError>({
+  queryKey: ['post', 1],
+  queryFn: fetchPost,
+})
+// data is Ref<Post | undefined>
+// error is Ref<PostError | null>
+```
+
+## Best Practices
+
+- Use reactive refs in query keys for automatic refetching
+- Leverage `enabled` option for dependent queries
+- Use `queryOptions` for reusable configurations
+- Implement proper error handling with v-if directives
+- Use `staleTime` to reduce unnecessary network requests
+- Enable devtools during development
+- Use `computed` for dynamic query configurations
+
+## Related Packages
+
+- `@tanstack/vue-query-devtools` - Developer tools
+- `@tanstack/vue-query-persist-client` - Persist cache to storage

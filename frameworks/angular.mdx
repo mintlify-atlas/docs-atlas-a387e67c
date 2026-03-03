@@ -1,0 +1,631 @@
+---
+title: Angular Query (Experimental)
+description: Signal-based queries and mutations for fetching, caching and updating asynchronous data in Angular applications
+---
+
+# Angular Query (Experimental)
+
+TanStack Angular Query provides signal-based primitives for managing server state in Angular applications. It leverages Angular's new Signals API for reactive data management and automatic updates.
+
+<Note>
+Angular Query is currently experimental and uses Angular's signals feature. The API may change in future versions.
+</Note>
+
+## Installation
+
+```bash
+npm install @tanstack/angular-query-experimental
+# or
+pnpm add @tanstack/angular-query-experimental
+# or
+yarn add @tanstack/angular-query-experimental
+```
+
+## Quick Start
+
+Provide TanStack Query in your application config:
+
+```ts
+import { ApplicationConfig } from '@angular/core'
+import { provideHttpClient, withFetch } from '@angular/common/http'
+import {
+  QueryClient,
+  provideTanStackQuery,
+} from '@tanstack/angular-query-experimental'
+import { withDevtools } from '@tanstack/angular-query-experimental/devtools'
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideHttpClient(withFetch()),
+    provideTanStackQuery(
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            gcTime: 1000 * 60 * 60 * 24, // 24 hours
+          },
+        },
+      }),
+      withDevtools(),
+    ),
+  ],
+}
+```
+
+## Core Functions
+
+### injectQuery
+
+Inject a reactive query into your component:
+
+```ts
+import { Component, signal } from '@angular/core'
+import { injectQuery } from '@tanstack/angular-query-experimental'
+
+type Post = {
+  id: number
+  title: string
+  body: string
+}
+
+@Component({
+  selector: 'app-posts',
+  template: `
+    <div>
+      @if (posts.isPending()) {
+        <div>Loading...</div>
+      } @else if (posts.error()) {
+        <div>Error: {{ posts.error()?.message }}</div>
+      } @else {
+        <ul>
+          @for (post of posts.data(); track post.id) {
+            <li>{{ post.title }}</li>
+          }
+        </ul>
+        @if (posts.isFetching()) {
+          <div>Background Updating...</div>
+        }
+      }
+    </div>
+  `,
+})
+export class PostsComponent {
+  posts = injectQuery(() => ({
+    queryKey: ['posts'],
+    queryFn: async (): Promise<Post[]> => {
+      const response = await fetch('https://api.example.com/posts')
+      return response.json()
+    },
+  }))
+}
+```
+
+### With Reactive Query Keys
+
+Query keys automatically react to signal changes:
+
+```ts
+import { Component, signal } from '@angular/core'
+import { injectQuery } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-post',
+  template: `
+    <div>
+      <button (click)="nextPost()">Next Post</button>
+      @if (post.data(); as data) {
+        <h1>{{ data.title }}</h1>
+        <p>{{ data.body }}</p>
+      }
+    </div>
+  `,
+})
+export class PostComponent {
+  readonly postId = signal(1)
+
+  // Query automatically refetches when postId changes
+  readonly post = injectQuery(() => ({
+    queryKey: ['post', this.postId()],
+    queryFn: () => this.fetchPost(this.postId()),
+  }))
+
+  nextPost() {
+    this.postId.update((id) => id + 1)
+  }
+
+  async fetchPost(id: number) {
+    const response = await fetch(`https://api.example.com/posts/${id}`)
+    return response.json()
+  }
+}
+```
+
+### injectMutation
+
+Perform mutations with signal-based state:
+
+```ts
+import { Component, inject } from '@angular/core'
+import {
+  injectMutation,
+  injectQueryClient,
+} from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-create-post',
+  template: `
+    <button 
+      (click)="createPost()" 
+      [disabled]="mutation.isPending()"
+    >
+      {{ mutation.isPending() ? 'Creating...' : 'Create Post' }}
+    </button>
+    @if (mutation.isError()) {
+      <div>Error: {{ mutation.error()?.message }}</div>
+    }
+    @if (mutation.isSuccess()) {
+      <div>Post created!</div>
+    }
+  `,
+})
+export class CreatePostComponent {
+  readonly queryClient = injectQueryClient()
+
+  readonly mutation = injectMutation(() => ({
+    mutationFn: async (newPost: { title: string; body: string }) => {
+      const response = await fetch('https://api.example.com/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPost),
+      })
+      return response.json()
+    },
+    onSuccess: () => {
+      this.queryClient.invalidateQueries({ queryKey: ['posts'] })
+    },
+  }))
+
+  createPost() {
+    this.mutation.mutate({ title: 'New Post', body: 'Content' })
+  }
+}
+```
+
+### injectInfiniteQuery
+
+Implement infinite scrolling:
+
+```ts
+import { Component } from '@angular/core'
+import { injectInfiniteQuery } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-infinite-posts',
+  template: `
+    <div>
+      @if (posts.isPending()) {
+        <div>Loading...</div>
+      } @else {
+        @for (page of posts.data()?.pages; track page) {
+          @for (post of page.posts; track post.id) {
+            <div>{{ post.title }}</div>
+          }
+        }
+        <button
+          (click)="loadMore()"
+          [disabled]="!posts.hasNextPage() || posts.isFetchingNextPage()"
+        >
+          {{ posts.isFetchingNextPage() ? 'Loading...' : 'Load More' }}
+        </button>
+      }
+    </div>
+  `,
+})
+export class InfinitePostsComponent {
+  readonly posts = injectInfiniteQuery(() => ({
+    queryKey: ['posts'],
+    queryFn: async ({ pageParam = 0 }) => {
+      const res = await fetch(`/api/posts?cursor=${pageParam}`)
+      return res.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  }))
+
+  loadMore() {
+    this.posts.fetchNextPage()
+  }
+}
+```
+
+## Service Integration
+
+Use Angular services with TanStack Query:
+
+```ts
+import { Injectable, inject } from '@angular/core'
+import { HttpClient } from '@angular/common/http'
+import {
+  QueryClient,
+  mutationOptions,
+  queryOptions,
+} from '@tanstack/angular-query-experimental'
+import { lastValueFrom } from 'rxjs'
+
+@Injectable({
+  providedIn: 'root',
+})
+export class TasksService {
+  readonly #queryClient = inject(QueryClient)
+  readonly #http = inject(HttpClient)
+
+  /**
+   * Query options for fetching all tasks
+   */
+  allTasks = (intervalMs: number) =>
+    queryOptions({
+      queryKey: ['tasks'],
+      queryFn: () => {
+        return lastValueFrom(this.#http.get<Array<string>>('/api/tasks'))
+      },
+      refetchInterval: intervalMs,
+    })
+
+  /**
+   * Mutation options for adding a task
+   */
+  addTask() {
+    return mutationOptions({
+      mutationFn: (task: string) =>
+        lastValueFrom(this.#http.post('/api/tasks', task)),
+      mutationKey: ['tasks'],
+      onSuccess: () => {
+        this.#queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      },
+    })
+  }
+
+  /**
+   * Mutation options for clearing all tasks
+   */
+  clearAllTasks() {
+    return mutationOptions({
+      mutationFn: () => lastValueFrom(this.#http.delete('/api/tasks')),
+      mutationKey: ['clearTasks'],
+      onSuccess: () => {
+        this.#queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      },
+    })
+  }
+}
+```
+
+Use the service in a component:
+
+```ts
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+} from '@angular/core'
+import {
+  injectMutation,
+  injectQuery,
+} from '@tanstack/angular-query-experimental'
+import { TasksService } from './tasks.service'
+
+@Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  selector: 'app-tasks',
+  template: `
+    <div>
+      <input 
+        type="range" 
+        min="1000" 
+        max="10000" 
+        [value]="intervalMs()"
+        (input)="inputChange($event)"
+      />
+      <span>{{ intervalMs() }}ms</span>
+
+      @if (tasks.isPending()) {
+        <div>Loading...</div>
+      } @else if (tasks.error()) {
+        <div>Error: {{ tasks.error()?.message }}</div>
+      } @else {
+        <ul>
+          @for (task of tasks.data(); track task) {
+            <li>{{ task }}</li>
+          }
+        </ul>
+      }
+
+      <input 
+        type="text" 
+        placeholder="New task" 
+        (keyup.enter)="addItem($event)"
+      />
+      <button (click)="clearTasks()">Clear All</button>
+    </div>
+  `,
+})
+export class TasksComponent {
+  readonly #tasksService = inject(TasksService)
+
+  readonly intervalMs = signal(1000)
+
+  readonly tasks = injectQuery(() =>
+    this.#tasksService.allTasks(this.intervalMs()),
+  )
+
+  readonly addMutation = injectMutation(() => this.#tasksService.addTask())
+  readonly clearMutation = injectMutation(() =>
+    this.#tasksService.clearAllTasks(),
+  )
+
+  clearTasks() {
+    this.clearMutation.mutate()
+  }
+
+  inputChange($event: Event) {
+    const target = $event.target as HTMLInputElement
+    this.intervalMs.set(Number(target.value))
+  }
+
+  addItem($event: Event) {
+    const target = $event.target as HTMLInputElement
+    const value = target.value
+    this.addMutation.mutate(value)
+    target.value = ''
+  }
+}
+```
+
+## Helper Functions
+
+### queryOptions
+
+Create type-safe, reusable query options:
+
+```ts
+import { queryOptions } from '@tanstack/angular-query-experimental'
+
+export const postQueryOptions = (id: number) => queryOptions({
+  queryKey: ['post', id],
+  queryFn: () => fetchPost(id),
+})
+
+// Use in component
+const post = injectQuery(() => postQueryOptions(1))
+```
+
+### infiniteQueryOptions
+
+Create type-safe infinite query options:
+
+```ts
+import { infiniteQueryOptions } from '@tanstack/angular-query-experimental'
+
+export const postsInfiniteOptions = infiniteQueryOptions({
+  queryKey: ['posts'],
+  queryFn: ({ pageParam = 0 }) => fetchPosts(pageParam),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
+```
+
+### mutationOptions
+
+Create reusable mutation options:
+
+```ts
+import { mutationOptions } from '@tanstack/angular-query-experimental'
+
+export const createPostMutation = () => mutationOptions({
+  mutationFn: (post: CreatePostDto) => createPost(post),
+  onSuccess: () => {
+    console.log('Post created')
+  },
+})
+```
+
+## State Tracking
+
+### injectIsFetching
+
+Track global fetching state:
+
+```ts
+import { Component } from '@angular/core'
+import { injectIsFetching } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-global-loader',
+  template: `
+    @if (isFetching() > 0) {
+      <div>Queries running: {{ isFetching() }}</div>
+    }
+  `,
+})
+export class GlobalLoaderComponent {
+  readonly isFetching = injectIsFetching()
+}
+```
+
+### injectIsMutating
+
+Track global mutation state:
+
+```ts
+import { Component } from '@angular/core'
+import { injectIsMutating } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-mutation-status',
+  template: `
+    @if (isMutating() > 0) {
+      <div>Mutations running: {{ isMutating() }}</div>
+    }
+  `,
+})
+export class MutationStatusComponent {
+  readonly isMutating = injectIsMutating()
+}
+```
+
+### injectMutationState
+
+Access all mutation states:
+
+```ts
+import { Component } from '@angular/core'
+import { injectMutationState } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-pending-mutations',
+  template: `
+    <div>Pending mutations: {{ pendingMutations().length }}</div>
+  `,
+})
+export class PendingMutationsComponent {
+  readonly pendingMutations = injectMutationState(() => ({
+    filters: { status: 'pending' },
+    select: (mutation) => mutation.state.variables,
+  }))
+}
+```
+
+## Provider Features
+
+### provideAngularQuery
+
+Alternative provider with feature flags:
+
+```ts
+import { provideAngularQuery, queryFeature } from '@tanstack/angular-query-experimental'
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideAngularQuery(
+      new QueryClient(),
+      queryFeature.withDevtools(),
+    ),
+  ],
+}
+```
+
+### injectQueryClient
+
+Access the QueryClient for manual operations:
+
+```ts
+import { Component, inject } from '@angular/core'
+import { injectQueryClient } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-component',
+})
+export class MyComponent {
+  readonly queryClient = injectQueryClient()
+
+  prefetchPost(id: number) {
+    this.queryClient.prefetchQuery({
+      queryKey: ['post', id],
+      queryFn: () => this.fetchPost(id),
+    })
+  }
+}
+```
+
+## SSR Support
+
+### injectIsRestoring
+
+Check if queries are being restored:
+
+```ts
+import { Component } from '@angular/core'
+import { injectIsRestoring } from '@tanstack/angular-query-experimental'
+
+@Component({
+  template: `
+    @if (isRestoring()) {
+      <div>Restoring queries...</div>
+    } @else {
+      <Content />
+    }
+  `,
+})
+export class AppComponent {
+  readonly isRestoring = injectIsRestoring()
+}
+```
+
+### provideIsRestoring
+
+Provide restoration context:
+
+```ts
+import { provideIsRestoring } from '@tanstack/angular-query-experimental'
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideIsRestoring(),
+    // other providers
+  ],
+}
+```
+
+## Devtools
+
+Devtools are included via the `withDevtools` feature:
+
+```ts
+import { provideTanStackQuery } from '@tanstack/angular-query-experimental'
+import { withDevtools } from '@tanstack/angular-query-experimental/devtools'
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideTanStackQuery(
+      new QueryClient(),
+      withDevtools(),
+    ),
+  ],
+}
+```
+
+## TypeScript Support
+
+Angular Query provides full type inference with signals:
+
+```ts
+type Post = { id: number; title: string; body: string }
+type PostError = { message: string }
+
+const post = injectQuery<Post, PostError>(() => ({
+  queryKey: ['post', 1],
+  queryFn: fetchPost,
+}))
+// post.data is Signal<Post | undefined>
+// post.error is Signal<PostError | null>
+```
+
+## Best Practices
+
+- Use signals for reactive query parameters
+- Leverage `ChangeDetectionStrategy.OnPush` for better performance
+- Create services to encapsulate query and mutation logic
+- Use `queryOptions` and `mutationOptions` for reusability
+- Integrate with Angular's HttpClient via `lastValueFrom`
+- Use dependency injection for QueryClient access
+- Enable devtools during development
+- Use the new `@if` and `@for` control flow syntax
+
+## Migration Notes
+
+Angular Query uses Angular's experimental Signals API. Ensure you're using Angular 16+ with signals enabled.
+
+## Related Packages
+
+- `@tanstack/angular-query-experimental/devtools` - Developer tools
+- `@tanstack/angular-query-persist-client` - Persist cache to storage

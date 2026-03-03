@@ -1,0 +1,366 @@
+---
+title: Parallel Queries
+description: Execute multiple queries in parallel for optimal performance
+---
+
+TanStack Query makes it easy to fetch multiple queries in parallel, maximizing performance by executing requests simultaneously rather than sequentially.
+
+## Multiple useQuery Calls
+
+The simplest way to run parallel queries is to use multiple `useQuery` hooks:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function Dashboard() {
+  const usersQuery = useQuery({
+    queryKey: ['users'],
+    queryFn: fetchUsers,
+  })
+  
+  const postsQuery = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+  
+  const statsQuery = useQuery({
+    queryKey: ['stats'],
+    queryFn: fetchStats,
+  })
+  
+  if (usersQuery.isLoading || postsQuery.isLoading || statsQuery.isLoading) {
+    return <div>Loading...</div>
+  }
+  
+  return (
+    <div>
+      <Users data={usersQuery.data} />
+      <Posts data={postsQuery.data} />
+      <Stats data={statsQuery.data} />
+    </div>
+  )
+}
+```
+
+All three queries execute in parallel automatically.
+
+## useQueries for Dynamic Parallel Queries
+
+When you need to execute a variable number of queries in parallel, use `useQueries`:
+
+```tsx
+import { useQueries } from '@tanstack/react-query'
+
+function UserProfiles({ userIds }: { userIds: string[] }) {
+  const userQueries = useQueries({
+    queries: userIds.map(id => ({
+      queryKey: ['user', id],
+      queryFn: () => fetchUser(id),
+      staleTime: 60 * 1000,
+    })),
+  })
+  
+  const isLoading = userQueries.some(query => query.isLoading)
+  const isError = userQueries.some(query => query.isError)
+  
+  if (isLoading) return <div>Loading users...</div>
+  if (isError) return <div>Error loading users</div>
+  
+  return (
+    <div>
+      {userQueries.map((query, index) => (
+        <div key={userIds[index]}>
+          {query.data?.name}
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+### Type-Safe useQueries
+
+For better type safety with `useQueries`, define your queries explicitly:
+
+```tsx
+import { useQueries, queryOptions } from '@tanstack/react-query'
+
+type User = { id: string; name: string }
+type Post = { id: string; title: string }
+
+function UserDashboard({ userId }: { userId: string }) {
+  const [userQuery, postsQuery] = useQueries({
+    queries: [
+      queryOptions({
+        queryKey: ['user', userId],
+        queryFn: async (): Promise<User> => {
+          const res = await fetch(`/api/users/${userId}`)
+          return res.json()
+        },
+      }),
+      queryOptions({
+        queryKey: ['posts', userId],
+        queryFn: async (): Promise<Post[]> => {
+          const res = await fetch(`/api/users/${userId}/posts`)
+          return res.json()
+        },
+      }),
+    ],
+  })
+  
+  // TypeScript knows userQuery.data is User | undefined
+  // and postsQuery.data is Post[] | undefined
+}
+```
+
+## Combining Query Results
+
+Combine multiple parallel queries into a single loading state:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function Overview() {
+  const queries = {
+    users: useQuery({ queryKey: ['users'], queryFn: fetchUsers }),
+    posts: useQuery({ queryKey: ['posts'], queryFn: fetchPosts }),
+    comments: useQuery({ queryKey: ['comments'], queryFn: fetchComments }),
+  }
+  
+  const isLoading = Object.values(queries).some(q => q.isLoading)
+  const isError = Object.values(queries).some(q => q.isError)
+  
+  if (isLoading) return <LoadingSpinner />
+  if (isError) return <ErrorMessage />
+  
+  return (
+    <div>
+      <section>Users: {queries.users.data?.length}</section>
+      <section>Posts: {queries.posts.data?.length}</section>
+      <section>Comments: {queries.comments.data?.length}</section>
+    </div>
+  )
+}
+```
+
+## Advanced useQueries Patterns
+
+### With Query Options Factory
+
+```tsx
+import { useQueries, queryOptions } from '@tanstack/react-query'
+
+const projectOptions = (id: string) => queryOptions({
+  queryKey: ['project', id],
+  queryFn: () => fetchProject(id),
+  staleTime: 5 * 60 * 1000,
+})
+
+function ProjectList({ projectIds }: { projectIds: string[] }) {
+  const projects = useQueries({
+    queries: projectIds.map(id => projectOptions(id)),
+  })
+  
+  return (
+    <div>
+      {projects.map((project, idx) => (
+        <div key={projectIds[idx]}>
+          {project.isLoading && 'Loading...'}
+          {project.data?.name}
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+### Combining with combine Option
+
+Use the `combine` option to transform the array of query results:
+
+```tsx
+import { useQueries } from '@tanstack/react-query'
+
+function ProjectStats({ projectIds }: { projectIds: string[] }) {
+  const result = useQueries({
+    queries: projectIds.map(id => ({
+      queryKey: ['project', id],
+      queryFn: () => fetchProject(id),
+    })),
+    combine: (results) => {
+      return {
+        data: results.map(r => r.data).filter(Boolean),
+        isLoading: results.some(r => r.isLoading),
+        isError: results.some(r => r.isError),
+      }
+    },
+  })
+  
+  if (result.isLoading) return <div>Loading...</div>
+  if (result.isError) return <div>Error</div>
+  
+  return <div>Loaded {result.data.length} projects</div>
+}
+```
+
+## Handling Errors in Parallel Queries
+
+### Individual Error Handling
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function MultiDataView() {
+  const usersQuery = useQuery({
+    queryKey: ['users'],
+    queryFn: fetchUsers,
+  })
+  
+  const postsQuery = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+  
+  return (
+    <div>
+      <section>
+        {usersQuery.isError ? (
+          <div>Failed to load users: {usersQuery.error.message}</div>
+        ) : usersQuery.isLoading ? (
+          <div>Loading users...</div>
+        ) : (
+          <UserList data={usersQuery.data} />
+        )}
+      </section>
+      
+      <section>
+        {postsQuery.isError ? (
+          <div>Failed to load posts: {postsQuery.error.message}</div>
+        ) : postsQuery.isLoading ? (
+          <div>Loading posts...</div>
+        ) : (
+          <PostList data={postsQuery.data} />
+        )}
+      </section>
+    </div>
+  )
+}
+```
+
+### Graceful Degradation
+
+Show available data even if some queries fail:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function Dashboard() {
+  const usersQuery = useQuery({
+    queryKey: ['users'],
+    queryFn: fetchUsers,
+    retry: 1,
+  })
+  
+  const analyticsQuery = useQuery({
+    queryKey: ['analytics'],
+    queryFn: fetchAnalytics,
+    retry: 1,
+  })
+  
+  return (
+    <div>
+      {usersQuery.data && <UserSection data={usersQuery.data} />}
+      
+      {analyticsQuery.isError ? (
+        <div className="warning">Analytics temporarily unavailable</div>
+      ) : analyticsQuery.data ? (
+        <AnalyticsSection data={analyticsQuery.data} />
+      ) : null}
+    </div>
+  )
+}
+```
+
+## Performance Considerations
+
+### Limit Concurrent Requests
+
+For many parallel queries, consider limiting concurrency:
+
+```tsx
+import { useQueries } from '@tanstack/react-query'
+
+// Process in batches to avoid overwhelming the server
+function ManyProjects({ projectIds }: { projectIds: string[] }) {
+  const [batch, setBatch] = React.useState(0)
+  const batchSize = 10
+  
+  const currentBatch = projectIds.slice(
+    batch * batchSize,
+    (batch + 1) * batchSize
+  )
+  
+  const projects = useQueries({
+    queries: currentBatch.map(id => ({
+      queryKey: ['project', id],
+      queryFn: () => fetchProject(id),
+    })),
+  })
+  
+  return (
+    <div>
+      {projects.map((project, idx) => (
+        <div key={currentBatch[idx]}>
+          {project.data?.name}
+        </div>
+      ))}
+      {(batch + 1) * batchSize < projectIds.length && (
+        <button onClick={() => setBatch(b => b + 1)}>Load More</button>
+      )}
+    </div>
+  )
+}
+```
+
+<Warning>
+  **Performance Tip**: While parallel queries improve performance, be mindful of:
+  - Browser connection limits (typically 6-8 per domain)
+  - Server capacity and rate limits
+  - User's network bandwidth
+  
+  Consider using `useQueries` with batched processing for large numbers of queries.
+</Warning>
+
+## Common Patterns
+
+### Waterfall vs Parallel
+
+```tsx
+// ❌ Waterfall - Sequential loading
+function UserWithPosts({ userId }: { userId: string }) {
+  const { data: user } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  })
+  
+  const { data: posts } = useQuery({
+    queryKey: ['posts', userId],
+    queryFn: () => fetchPosts(userId),
+    enabled: !!user, // Waits for user to load
+  })
+}
+
+// ✅ Parallel - Both load simultaneously
+function UserWithPosts({ userId }: { userId: string }) {
+  const { data: user } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  })
+  
+  const { data: posts } = useQuery({
+    queryKey: ['posts', userId],
+    queryFn: () => fetchPosts(userId),
+    // No enabled condition - loads immediately
+  })
+}
+```

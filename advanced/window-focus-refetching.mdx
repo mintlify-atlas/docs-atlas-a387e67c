@@ -1,0 +1,391 @@
+---
+title: Window Focus Refetching
+description: Automatically refetch queries when users return to your application for fresh data
+---
+
+TanStack Query automatically refetches queries when the browser window regains focus. This ensures users always see fresh data when they return to your application after viewing other tabs or applications.
+
+## How It Works
+
+When a user switches back to your application's tab:
+
+1. TanStack Query detects the window focus event
+2. Checks which queries are stale (older than their `staleTime`)
+3. Automatically refetches stale queries in the background
+4. Updates the UI with fresh data
+
+```tsx
+function Posts() {
+  const { data, dataUpdatedAt } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+    // Data older than 30 seconds will refetch on window focus
+    staleTime: 30 * 1000,
+  })
+
+  return (
+    <div>
+      <div>Last updated: {new Date(dataUpdatedAt).toLocaleTimeString()}</div>
+      {data?.map(post => (
+        <div key={post.id}>{post.title}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+## Default Behavior
+
+By default, `refetchOnWindowFocus` is set to `true`:
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  // These are the defaults:
+  refetchOnWindowFocus: true,
+  staleTime: 0, // Immediately stale
+})
+
+// Switches tab → Returns to tab → Query refetches
+```
+
+## Disabling Window Focus Refetching
+
+Disable for specific queries:
+
+```tsx
+function UserProfile() {
+  const { data } = useQuery({
+    queryKey: ['userProfile'],
+    queryFn: fetchUserProfile,
+    refetchOnWindowFocus: false, // Don't refetch on focus
+  })
+
+  return <div>{data?.name}</div>
+}
+```
+
+Disable globally:
+
+```tsx
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false, // Disable for all queries
+    },
+  },
+})
+```
+
+## Always Refetch on Focus
+
+Force refetch even if data isn't stale:
+
+```tsx
+function LiveData() {
+  const { data, dataUpdatedAt } = useQuery({
+    queryKey: ['liveData'],
+    queryFn: fetchLiveData,
+    refetchOnWindowFocus: 'always', // Refetch regardless of staleTime
+  })
+
+  return (
+    <div>
+      <div>Updated: {new Date(dataUpdatedAt).toLocaleString()}</div>
+      <div>Value: {data?.value}</div>
+    </div>
+  )
+}
+```
+
+## Conditional Refetching
+
+Use a function to determine whether to refetch:
+
+```tsx
+function ConditionalRefetch() {
+  const { data } = useQuery({
+    queryKey: ['data'],
+    queryFn: fetchData,
+    refetchOnWindowFocus: (query) => {
+      // Only refetch if data is older than 5 minutes
+      const age = Date.now() - (query.state.dataUpdatedAt ?? 0)
+      return age > 5 * 60 * 1000
+    },
+  })
+
+  return <div>{data?.value}</div>
+}
+```
+
+## Combining with staleTime
+
+Control refetch behavior with `staleTime`:
+
+```tsx
+// Refetch on focus only if data is older than 1 minute
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  staleTime: 60 * 1000, // Fresh for 1 minute
+  refetchOnWindowFocus: true, // Refetch stale data on focus
+})
+
+// User switches tabs after 30 seconds → Returns → No refetch (still fresh)
+// User switches tabs after 2 minutes → Returns → Refetches (now stale)
+```
+
+## Real-Time Data Updates
+
+Keep data fresh with aggressive refetching:
+
+```tsx
+function StockTicker() {
+  const { data } = useQuery({
+    queryKey: ['stockPrice', 'AAPL'],
+    queryFn: () => fetchStockPrice('AAPL'),
+    staleTime: 0, // Always stale
+    refetchInterval: 5000, // Poll every 5 seconds
+    refetchOnWindowFocus: 'always', // Also refetch on focus
+  })
+
+  return (
+    <div>
+      <div>AAPL: ${data?.price}</div>
+      <div className="live-indicator">● LIVE</div>
+    </div>
+  )
+}
+```
+
+## Focus Detection Customization
+
+Customize when TanStack Query considers the window "focused":
+
+```tsx
+import { focusManager } from '@tanstack/react-query'
+
+// Override focus detection
+focusManager.setEventListener((handleFocus) => {
+  // Custom logic for when to treat window as focused
+  if (typeof window !== 'undefined' && window.addEventListener) {
+    const listener = () => {
+      if (document.visibilityState === 'visible') {
+        handleFocus(true)
+      } else {
+        handleFocus(false)
+      }
+    }
+
+    window.addEventListener('visibilitychange', listener, false)
+
+    return () => {
+      window.removeEventListener('visibilitychange', listener)
+    }
+  }
+})
+```
+
+## React Native: Screen Focus Refetching
+
+In React Native, use screen focus instead of window focus:
+
+```tsx
+import { useFocusEffect } from '@react-navigation/native'
+import { useQuery } from '@tanstack/react-query'
+
+function useRefreshOnFocus(refetch: () => void) {
+  const enabledRef = useRef(false)
+
+  useFocusEffect(
+    useCallback(() => {
+      if (enabledRef.current) {
+        refetch()
+      } else {
+        enabledRef.current = true
+      }
+    }, [refetch])
+  )
+}
+
+function MoviesScreen() {
+  const { data, refetch } = useQuery({
+    queryKey: ['movies'],
+    queryFn: fetchMovies,
+    refetchOnWindowFocus: false, // Disable default behavior
+  })
+
+  // Refetch when screen comes into focus
+  useRefreshOnFocus(refetch)
+
+  return (
+    <View>
+      {data?.map(movie => (
+        <Text key={movie.id}>{movie.title}</Text>
+      ))}
+    </View>
+  )
+}
+```
+
+## Handling Online/Offline
+
+Combine focus refetching with online/offline detection:
+
+```tsx
+function SmartRefetch() {
+  const { data } = useQuery({
+    queryKey: ['data'],
+    queryFn: fetchData,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true, // Also refetch when coming back online
+    networkMode: 'online', // Only fetch when online
+  })
+
+  return <div>{data?.value}</div>
+}
+```
+
+## Preventing Excessive Refetches
+
+Use `staleTime` to prevent refetching too frequently:
+
+```tsx
+function Posts() {
+  const { data } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+    staleTime: 5 * 60 * 1000, // Fresh for 5 minutes
+    refetchOnWindowFocus: true,
+  })
+
+  // User rapidly switches tabs → Only refetches if 5+ minutes old
+  return <div>{/* ... */}</div>
+}
+```
+
+<Warning>
+**Beware of Aggressive Refetching**
+
+Too much refetching can:
+- Increase server load unnecessarily
+- Consume user's bandwidth
+- Drain mobile device battery
+- Cost money on metered APIs
+
+```tsx
+// Bad: Refetches constantly
+const { data } = useQuery({
+  queryKey: ['data'],
+  queryFn: fetchData,
+  staleTime: 0, // Always stale
+  refetchOnWindowFocus: 'always', // Always refetch
+  refetchInterval: 1000, // Poll every second
+})
+
+// Good: Balanced refetching
+const { data } = useQuery({
+  queryKey: ['data'],
+  queryFn: fetchData,
+  staleTime: 60 * 1000, // Fresh for 1 minute
+  refetchOnWindowFocus: true, // Only if stale
+  refetchInterval: 30000, // Poll every 30 seconds
+})
+```
+</Warning>
+
+## Debugging Focus Refetching
+
+Use the devtools to monitor focus-triggered refetches:
+
+```tsx
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <YourApp />
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
+  )
+}
+
+// In devtools:
+// 1. Switch to another tab
+// 2. Switch back
+// 3. Watch the "Observers" count increment
+// 4. See which queries refetched in the timeline
+```
+
+## Manually Trigger Focus Refetch
+
+Simulate window focus programmatically:
+
+```tsx
+import { focusManager } from '@tanstack/react-query'
+
+function RefreshButton() {
+  const handleRefresh = () => {
+    // Trigger focus refetch for all queries
+    focusManager.setFocused(true)
+  }
+
+  return (
+    <button onClick={handleRefresh}>
+      Refresh All
+    </button>
+  )
+}
+```
+
+## Use Cases
+
+### Social Media Feed
+```tsx
+function Feed() {
+  const { data } = useQuery({
+    queryKey: ['feed'],
+    queryFn: fetchFeed,
+    staleTime: 30 * 1000, // Refetch if older than 30 seconds
+    refetchOnWindowFocus: true,
+  })
+  // User checks another tab → Returns → Sees new posts
+}
+```
+
+### Dashboard with Live Metrics
+```tsx
+function Metrics() {
+  const { data } = useQuery({
+    queryKey: ['metrics'],
+    queryFn: fetchMetrics,
+    staleTime: 2 * 60 * 1000, // Fresh for 2 minutes
+    refetchOnWindowFocus: true,
+    refetchInterval: 60 * 1000, // Also poll every minute
+  })
+}
+```
+
+### Static Content (Blog Posts)
+```tsx
+function BlogPost() {
+  const { data } = useQuery({
+    queryKey: ['post', postId],
+    queryFn: () => fetchPost(postId),
+    staleTime: Infinity, // Never stale
+    refetchOnWindowFocus: false, // Don't refetch on focus
+  })
+  // Blog posts rarely change, no need to refetch
+}
+```
+
+## Best Practices
+
+1. **Set appropriate `staleTime`** - Balance freshness with server load
+2. **Use `refetchOnWindowFocus: 'always'` sparingly** - Reserve for truly real-time data
+3. **Disable for static content** - Don't waste resources refetching unchanging data
+4. **Combine with polling** - Use both focus refetch and `refetchInterval` for live data
+5. **Consider mobile users** - Aggressive refetching drains battery and data
+6. **Monitor with DevTools** - Watch for excessive refetching patterns
+7. **Test tab switching** - Ensure refetching behavior feels right for your use case

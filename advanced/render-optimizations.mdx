@@ -1,0 +1,282 @@
+---
+title: Render Optimizations
+description: Optimize React re-renders with TanStack Query using tracked queries, select, and notifyOnChangeProps
+---
+
+TanStack Query provides several mechanisms to optimize component re-renders and improve application performance. Understanding these optimization strategies helps you build fast, responsive applications.
+
+## Automatic Tracked Queries
+
+By default, TanStack Query automatically tracks which properties of the query result you access and only re-renders when those specific properties change. This means you don't need to do anything special to get optimized re-renders.
+
+```tsx
+function Component() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+  })
+
+  // Component only re-renders when data or isLoading changes
+  // Changes to isFetching, error, etc. won't cause re-renders
+  if (isLoading) return <div>Loading...</div>
+  return <div>{data.length} todos</div>
+}
+```
+
+## notifyOnChangeProps Option
+
+For more control over which properties trigger re-renders, use the `notifyOnChangeProps` option.
+
+### Explicit Property List
+
+```tsx
+function Component() {
+  const { data, error } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    notifyOnChangeProps: ['data', 'error'],
+  })
+
+  // Only re-renders when data or error changes
+  // Background refetches won't cause re-renders
+  return <div>{data?.length} todos</div>
+}
+```
+
+### Monitor All Changes
+
+```tsx
+function Component() {
+  const queryInfo = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    notifyOnChangeProps: 'all',
+  })
+
+  // Re-renders on ANY query state change
+  // Useful for debugging or detailed status displays
+  return (
+    <div>
+      <div>Status: {queryInfo.status}</div>
+      <div>Is Fetching: {queryInfo.isFetching}</div>
+      <div>Data: {queryInfo.data?.length}</div>
+    </div>
+  )
+}
+```
+
+### Dynamic Notification Props
+
+```tsx
+function Component({ debugMode }: { debugMode: boolean }) {
+  const queryInfo = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    notifyOnChangeProps: () => 
+      debugMode ? 'all' : ['data', 'error'],
+  })
+
+  return <div>{queryInfo.data?.length} todos</div>
+}
+```
+
+## Select Option for Data Transformation
+
+The `select` option allows you to transform or subscribe to only part of the query data. The selector function only runs when the underlying data changes, providing automatic memoization.
+
+### Basic Selection
+
+```tsx
+function TodoCount() {
+  const { data } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    select: (data) => data.length,
+  })
+
+  // Only re-renders when the LENGTH changes, not when todo content changes
+  return <div>{data} todos</div>
+}
+```
+
+### Filtering Data
+
+```tsx
+function CompletedTodos() {
+  const { data } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    select: (data) => data.filter(todo => todo.completed),
+  })
+
+  // Only re-renders when completed todos change
+  return (
+    <ul>
+      {data?.map(todo => (
+        <li key={todo.id}>{todo.title}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+### Complex Transformations
+
+```tsx
+interface TodoStats {
+  total: number
+  completed: number
+  percentComplete: number
+}
+
+function TodoStats() {
+  const { data } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    select: (data): TodoStats => {
+      const completed = data.filter(todo => todo.completed).length
+      return {
+        total: data.length,
+        completed,
+        percentComplete: data.length ? (completed / data.length) * 100 : 0,
+      }
+    },
+  })
+
+  return (
+    <div>
+      <div>{data.total} total</div>
+      <div>{data.completed} completed ({data.percentComplete.toFixed(1)}%)</div>
+    </div>
+  )
+}
+```
+
+<Warning>
+**Avoid Creating New Objects in Select**
+
+Don't create new object/array references unless the underlying data actually changed:
+
+```tsx
+// Bad: Creates new array on every select run
+select: (data) => data.map(item => ({ ...item }))
+
+// Good: Only transforms when needed
+select: (data) => data.filter(item => item.active)
+```
+
+Structural sharing is applied to the result of `select`, but creating unnecessary new references defeats this optimization.
+</Warning>
+
+## Combining Optimizations
+
+You can combine `select` with `notifyOnChangeProps` for maximum control:
+
+```tsx
+function OptimizedComponent() {
+  const { data } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    select: (data) => data.filter(todo => !todo.completed),
+    notifyOnChangeProps: ['data'],
+  })
+
+  // Only re-renders when incomplete todos change
+  // Ignores all other query state changes
+  return <div>{data?.length} incomplete todos</div>
+}
+```
+
+## Structural Sharing
+
+TanStack Query uses structural sharing to minimize re-renders. When new data is fetched, it's compared with the old data at every level. Only changed portions create new references.
+
+```tsx
+// First fetch returns:
+{ id: 1, name: 'Todo 1', completed: false }
+
+// Second fetch returns:
+{ id: 1, name: 'Todo 1', completed: true }
+
+// The entire object reference changes because completed changed
+// But if nothing changed, the old reference is reused
+```
+
+You can customize this behavior:
+
+```tsx
+useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  // Disable structural sharing
+  structuralSharing: false,
+})
+
+// Or provide custom comparison
+useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  structuralSharing: (oldData, newData) => {
+    // Custom logic to determine what to keep
+    return customMerge(oldData, newData)
+  },
+})
+```
+
+## Performance Best Practices
+
+1. **Use tracked queries by default** - Let TanStack Query automatically optimize for you
+2. **Use `select` for data transformation** - Transform data at the query level, not in components
+3. **Specify `notifyOnChangeProps` for specific cases** - When you need explicit control over re-renders
+4. **Keep selectors pure and stable** - Don't create new references unnecessarily
+5. **Measure before optimizing** - Use React DevTools Profiler to identify actual performance issues
+
+## Common Patterns
+
+### Background Indicator Without Re-renders
+
+```tsx
+function TodoList() {
+  const queryClient = useQueryClient()
+  const { data } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    notifyOnChangeProps: ['data'],
+  })
+
+  // Get isFetching from cache without subscribing
+  const isFetching = queryClient.isFetching({ queryKey: ['todos'] })
+
+  return (
+    <div>
+      {isFetching && <div>Updating...</div>}
+      <ul>{data?.map(todo => <li key={todo.id}>{todo.title}</li>)}</ul>
+    </div>
+  )
+}
+```
+
+### Multiple Components, Same Query
+
+```tsx
+function TodoCount() {
+  const { data } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    select: (data) => data.length,
+  })
+  return <div>{data} todos</div>
+}
+
+function CompletedCount() {
+  const { data } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    select: (data) => data.filter(t => t.completed).length,
+  })
+  return <div>{data} completed</div>
+}
+
+// Both components share the same cache entry
+// But each only re-renders when their selected value changes
+```

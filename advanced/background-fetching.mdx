@@ -1,0 +1,412 @@
+---
+title: Background Fetching Indicators
+description: Display loading states for background refetches while keeping your UI responsive
+---
+
+TanStack Query refetches queries in the background to keep data fresh. Understanding how to show background fetching indicators improves user experience by providing feedback without blocking the UI.
+
+## Understanding Fetching States
+
+Queries have multiple states to track fetching:
+
+- **`status`**: Overall state of the query (`pending`, `error`, `success`)
+- **`isPending`**: Initial load, no data yet
+- **`isFetching`**: Any fetch in progress (initial or background)
+- **`isRefetching`**: Background refetch while data exists
+
+```tsx
+function Example() {
+  const { status, data, error, isPending, isFetching, isRefetching } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+  })
+
+  console.log({
+    status,        // 'pending' | 'error' | 'success'
+    isPending,     // true only on first load
+    isFetching,    // true during any fetch
+    isRefetching,  // true during background refetch
+  })
+
+  if (isPending) return <div>Loading...</div>
+  if (error) return <div>Error: {error.message}</div>
+
+  return (
+    <div>
+      {data.map(todo => <div key={todo.id}>{todo.title}</div>)}
+      {isFetching && <div>Updating...</div>}
+    </div>
+  )
+}
+```
+
+## Basic Background Indicator
+
+Show a simple indicator during background refetches:
+
+```tsx
+function Todos() {
+  const { data, isFetching } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+  })
+
+  return (
+    <div>
+      <div style={{
+        display: 'inline-block',
+        width: 10,
+        height: 10,
+        borderRadius: '50%',
+        background: isFetching ? 'green' : 'transparent',
+        transition: 'background 0.3s ease',
+      }} />
+      <ul>
+        {data?.map(todo => (
+          <li key={todo.id}>{todo.title}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+## Subtle Loading Bar
+
+Implement a top-loading bar for background updates:
+
+```tsx
+function App() {
+  const { isFetching } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+  })
+
+  return (
+    <div>
+      {isFetching && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 3,
+          background: 'linear-gradient(to right, #4ade80, #3b82f6)',
+          animation: 'shimmer 1s infinite',
+        }} />
+      )}
+      <Content />
+    </div>
+  )
+}
+```
+
+## Global Fetching Indicator
+
+Show an indicator when ANY query is fetching using `useIsFetching`:
+
+```tsx
+import { useIsFetching } from '@tanstack/react-query'
+
+function GlobalLoadingIndicator() {
+  const isFetching = useIsFetching()
+
+  return isFetching ? (
+    <div className="global-loading">
+      <div className="spinner" />
+      {isFetching} queries fetching...
+    </div>
+  ) : null
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <GlobalLoadingIndicator />
+      <Routes />
+    </QueryClientProvider>
+  )
+}
+```
+
+## Filter by Query Key
+
+Show indicators for specific query groups:
+
+```tsx
+import { useIsFetching } from '@tanstack/react-query'
+
+function TodosSection() {
+  const isFetchingTodos = useIsFetching({ queryKey: ['todos'] })
+
+  return (
+    <section>
+      <h2>
+        Todos
+        {isFetchingTodos > 0 && <Spinner />}
+      </h2>
+      <TodoList />
+    </section>
+  )
+}
+
+function ProjectsSection() {
+  const isFetchingProjects = useIsFetching({ queryKey: ['projects'] })
+
+  return (
+    <section>
+      <h2>
+        Projects
+        {isFetchingProjects > 0 && <Spinner />}
+      </h2>
+      <ProjectList />
+    </section>
+  )
+}
+```
+
+## Opacity During Refetch
+
+Reduce opacity of content while refetching:
+
+```tsx
+function Posts() {
+  const { data, isFetching } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  return (
+    <div style={{
+      opacity: isFetching ? 0.6 : 1,
+      transition: 'opacity 0.2s',
+    }}>
+      {data?.map(post => (
+        <article key={post.id}>
+          <h2>{post.title}</h2>
+          <p>{post.body}</p>
+        </article>
+      ))}
+    </div>
+  )
+}
+```
+
+## Separate Initial and Background Loading
+
+Different UI for initial load vs background refetch:
+
+```tsx
+function Posts() {
+  const { data, isPending, isRefetching } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  if (isPending) {
+    return <div className="skeleton-loader">Loading posts...</div>
+  }
+
+  return (
+    <div>
+      {isRefetching && (
+        <div className="background-refresh-banner">
+          Checking for updates...
+        </div>
+      )}
+      {data?.map(post => (
+        <PostCard key={post.id} post={post} />
+      ))}
+    </div>
+  )
+}
+```
+
+## Pagination with Background Indicator
+
+Show background loading without hiding previous page data:
+
+```tsx
+import { keepPreviousData } from '@tanstack/react-query'
+
+function Projects() {
+  const [page, setPage] = useState(0)
+
+  const { data, isPending, isFetching, isPlaceholderData } = useQuery({
+    queryKey: ['projects', page],
+    queryFn: () => fetchProjects(page),
+    placeholderData: keepPreviousData,
+  })
+
+  if (isPending) return <div>Loading...</div>
+
+  return (
+    <div>
+      {data.projects.map(project => (
+        <div key={project.id}>{project.name}</div>
+      ))}
+      <div>
+        <button
+          onClick={() => setPage(old => Math.max(old - 1, 0))}
+          disabled={page === 0}
+        >
+          Previous
+        </button>
+        <button
+          onClick={() => setPage(old => old + 1)}
+          disabled={isPlaceholderData || !data?.hasMore}
+        >
+          Next
+        </button>
+      </div>
+      {/* Show loading indicator while fetching new page */}
+      {isFetching && !isPending && <div>Loading more...</div>}
+    </div>
+  )
+}
+```
+
+## fetchStatus for Network State
+
+Differentiate between actively fetching and paused:
+
+```tsx
+function Posts() {
+  const { data, fetchStatus, isFetching } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  return (
+    <div>
+      {fetchStatus === 'fetching' && <div>Fetching...</div>}
+      {fetchStatus === 'paused' && <div>Query paused (offline)</div>}
+      {fetchStatus === 'idle' && !isFetching && <div>Up to date</div>}
+      
+      {data?.map(post => (
+        <div key={post.id}>{post.title}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+## Combining Multiple Queries
+
+Show a single indicator when any of multiple queries are fetching:
+
+```tsx
+function Dashboard() {
+  const todosQuery = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+  })
+
+  const projectsQuery = useQuery({
+    queryKey: ['projects'],
+    queryFn: fetchProjects,
+  })
+
+  const usersQuery = useQuery({
+    queryKey: ['users'],
+    queryFn: fetchUsers,
+  })
+
+  const isAnyFetching = (
+    todosQuery.isFetching || 
+    projectsQuery.isFetching || 
+    usersQuery.isFetching
+  )
+
+  return (
+    <div>
+      {isAnyFetching && <div className="loading-bar" />}
+      <TodosSection data={todosQuery.data} />
+      <ProjectsSection data={projectsQuery.data} />
+      <UsersSection data={usersQuery.data} />
+    </div>
+  )
+}
+```
+
+## Avoiding Notification Spam
+
+Prevent re-renders from `isFetching` changes when you only care about data:
+
+```tsx
+function TodoCount() {
+  const { data } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    // Only re-render when data changes, not when isFetching changes
+    notifyOnChangeProps: ['data'],
+  })
+
+  // This component won't re-render during background refetches
+  return <div>{data?.length} todos</div>
+}
+
+// Separate component for the indicator
+function TodoFetchIndicator() {
+  const { isFetching } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    notifyOnChangeProps: ['isFetching'],
+  })
+
+  return isFetching ? <Spinner /> : null
+}
+```
+
+<Warning>
+**Don't Block UI During Background Fetches**
+
+Background refetches should never block the UI or prevent user interactions:
+
+```tsx
+// Bad: Disables UI during background fetch
+function Posts() {
+  const { data, isFetching } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  return (
+    <div>
+      {data?.map(post => (
+        <button disabled={isFetching}>  {/* Don't do this! */}
+          {post.title}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// Good: Show indicator without blocking
+function Posts() {
+  const { data, isFetching } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  return (
+    <div>
+      {isFetching && <div className="updating-indicator" />}
+      {data?.map(post => (
+        <button>{post.title}</button>  {/* Always interactive */}
+      ))}
+    </div>
+  )
+}
+```
+</Warning>
+
+## Best Practices
+
+1. **Show subtle indicators** - Don't distract users with prominent loading states during background updates
+2. **Use `isPending` for initial load** - Reserve skeleton screens and spinners for first load
+3. **Use `isFetching` for background updates** - Show subtle indicators like progress bars or icons
+4. **Don't block interactions** - Keep the UI interactive during background refetches
+5. **Consider global indicators** - Use `useIsFetching` for app-wide loading states
+6. **Optimize re-renders** - Use `notifyOnChangeProps` to prevent unnecessary updates
+7. **Provide context** - Tell users what's happening ("Checking for updates..." vs just a spinner)

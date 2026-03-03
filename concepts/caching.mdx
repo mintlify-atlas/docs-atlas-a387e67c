@@ -1,0 +1,442 @@
+---
+title: Caching
+description: Understanding how TanStack Query's caching system works, including stale time, cache time, and garbage collection
+---
+
+## Overview
+
+TanStack Query provides a powerful automatic caching layer that manages server state efficiently. Understanding how caching works is essential for building performant applications.
+
+## Cache Lifecycle
+
+Every query goes through the following lifecycle:
+
+1. **Fresh** - Query is new and data is considered fresh (within `staleTime`)
+2. **Stale** - Query data is older than `staleTime` and may need refetching
+3. **Inactive** - Query has no active observers (components using it)
+4. **Garbage Collection** - After `gcTime`, inactive query data is removed from memory
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  staleTime: 5 * 60 * 1000,  // 5 minutes
+  gcTime: 10 * 60 * 1000,     // 10 minutes
+})
+```
+
+## Stale Time
+
+`staleTime` determines how long query data is considered fresh. While fresh, queries will not refetch on mount or window focus.
+
+### Default Behavior (staleTime: 0)
+
+```tsx
+// staleTime defaults to 0 - data is immediately stale
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  // staleTime: 0 (default)
+})
+
+// Component mounts -> Fetches data
+// Component unmounts -> Data stays in cache
+// Component mounts again -> Fetches again (because data is stale)
+```
+
+### Setting Stale Time
+
+```tsx
+// Data is fresh for 5 minutes
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  staleTime: 5 * 60 * 1000,
+})
+
+// Component mounts -> Fetches data
+// Component unmounts within 5 min -> Data stays fresh in cache
+// Component mounts again within 5 min -> Returns cached data (no fetch)
+// After 5 min -> Data becomes stale, fetches on next mount
+```
+
+### Infinity Stale Time
+
+```tsx
+// Data never becomes stale
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  staleTime: Infinity,
+})
+
+// Data only fetches once and is reused forever
+// Still refetches on manual refetch or invalidation
+```
+
+### Static Stale Time
+
+```tsx
+// Data never becomes stale AND never auto-refetches
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  staleTime: 'static',
+})
+
+// Data fetches once and never refetches automatically
+// Only refetches on manual refetch, not on invalidation
+```
+
+### Dynamic Stale Time
+
+```tsx
+// Compute stale time based on query
+const { data } = useQuery({
+  queryKey: ['posts', category],
+  queryFn: fetchPosts,
+  staleTime: (query) => {
+    // Featured posts stay fresh longer
+    const [, cat] = query.queryKey
+    return cat === 'featured' ? 10 * 60 * 1000 : 60 * 1000
+  },
+})
+```
+
+## Garbage Collection Time (gcTime)
+
+`gcTime` (formerly `cacheTime`) determines how long inactive query data remains in memory.
+
+### Default Behavior (gcTime: 5 minutes)
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  // gcTime: 5 * 60 * 1000 (default)
+})
+
+// Component mounts -> Fetches data, query becomes active
+// Component unmounts -> Query becomes inactive, GC timer starts
+// After 5 minutes of inactivity -> Data is removed from cache
+// Component mounts again -> Fetches from scratch (no cached data)
+```
+
+### Configuring GC Time
+
+```tsx
+// Keep data in cache for 10 minutes after last use
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  gcTime: 10 * 60 * 1000,
+})
+
+// Never garbage collect (keep indefinitely)
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  gcTime: Infinity,
+})
+```
+
+### GC Time vs Stale Time
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  staleTime: 2 * 60 * 1000,   // Fresh for 2 minutes
+  gcTime: 10 * 60 * 1000,      // Keep in cache for 10 minutes
+})
+
+// Timeline:
+// 0:00 - Component mounts, fetches data (fresh)
+// 0:30 - Component unmounts (still fresh, inactive)
+// 2:00 - Data becomes stale (but still in cache)
+// 5:00 - Component mounts again (stale, refetches, shows cached data)
+// 5:30 - Component unmounts again (fresh for 2 min, inactive)
+// 15:30 - 10 minutes of inactivity, data removed from cache
+```
+
+<Note>
+  **Best Practice**: Set `gcTime` longer than `staleTime`. This ensures stale data can be shown immediately while fresh data loads in the background.
+</Note>
+
+## Cache Behavior Patterns
+
+### Instant Data with Background Refresh
+
+```tsx
+// Show cached data immediately, refresh in background
+const { data, isRefetching } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  staleTime: 0,              // Always refetch
+  gcTime: 5 * 60 * 1000,     // But keep data for 5 min
+})
+
+// User sees cached data instantly
+// Fresh data loads in background
+// No loading spinner after first load
+```
+
+### Long-Lived Static Data
+
+```tsx
+// Data that rarely changes
+const { data } = useQuery({
+  queryKey: ['config'],
+  queryFn: fetchConfig,
+  staleTime: Infinity,      // Never stale
+  gcTime: Infinity,         // Never remove
+})
+
+// Fetches once per session
+// Perfect for app config, user permissions, etc.
+```
+
+### Real-Time Data
+
+```tsx
+// Data that needs to be fresh
+const { data } = useQuery({
+  queryKey: ['live-stats'],
+  queryFn: fetchStats,
+  staleTime: 0,              // Always refetch
+  refetchInterval: 1000,     // Poll every second
+})
+```
+
+### Paginated Data
+
+```tsx
+// Keep all pages in cache
+const { data } = useQuery({
+  queryKey: ['posts', { page }],
+  queryFn: () => fetchPosts(page),
+  staleTime: 5 * 60 * 1000,  // Fresh for 5 min
+  gcTime: 30 * 60 * 1000,     // Keep for 30 min
+})
+
+// Users can navigate pages without refetching
+// All pages stay cached for 30 minutes
+```
+
+## Global Cache Configuration
+
+Set default cache behavior for all queries:
+
+```tsx
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60 * 1000,      // 1 minute default
+      gcTime: 5 * 60 * 1000,      // 5 minutes default
+      retry: 3,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+    },
+  },
+})
+```
+
+## Structural Sharing
+
+TanStack Query uses structural sharing to optimize memory and re-renders:
+
+```tsx
+// First fetch
+const data1 = [{ id: 1, title: 'Post 1' }, { id: 2, title: 'Post 2' }]
+
+// Second fetch with same data
+const data2 = [{ id: 1, title: 'Post 1' }, { id: 2, title: 'Post 2' }]
+
+// TanStack Query reuses data1 reference if deeply equal
+// Components don't re-render unnecessarily
+```
+
+### Disable Structural Sharing
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  structuralSharing: false,  // Always use new reference
+})
+```
+
+### Custom Structural Sharing
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  structuralSharing: (oldData, newData) => {
+    // Custom comparison logic
+    if (oldData?.version === newData?.version) {
+      return oldData  // Keep old reference
+    }
+    return newData  // Use new reference
+  },
+})
+```
+
+## Cache Persistence
+
+Persist cache to localStorage, IndexedDB, or other storage:
+
+```tsx
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      gcTime: 1000 * 60 * 60 * 24, // 24 hours
+    },
+  },
+})
+
+const persister = createSyncStoragePersister({
+  storage: window.localStorage,
+})
+
+function App() {
+  return (
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister }}
+    >
+      {/* Your app */}
+    </PersistQueryClientProvider>
+  )
+}
+```
+
+## Cache Manipulation
+
+### Reading from Cache
+
+```tsx
+const queryClient = useQueryClient()
+
+// Get cached data
+const posts = queryClient.getQueryData(['posts'])
+
+// Get query state
+const state = queryClient.getQueryState(['posts'])
+console.log(state.dataUpdatedAt, state.status, state.error)
+```
+
+### Writing to Cache
+
+```tsx
+const queryClient = useQueryClient()
+
+// Set data directly
+queryClient.setQueryData(['posts'], newPosts)
+
+// Update data functionally
+queryClient.setQueryData(['posts'], (oldPosts) => [
+  ...oldPosts,
+  newPost,
+])
+```
+
+### Prefetching
+
+Prefetch data before it's needed:
+
+```tsx
+const queryClient = useQueryClient()
+
+// Prefetch on hover
+const handleMouseEnter = () => {
+  queryClient.prefetchQuery({
+    queryKey: ['post', postId],
+    queryFn: () => fetchPost(postId),
+    staleTime: 5 * 60 * 1000,
+  })
+}
+```
+
+### Removing Queries
+
+```tsx
+const queryClient = useQueryClient()
+
+// Remove specific query
+queryClient.removeQueries({ queryKey: ['posts'] })
+
+// Remove with filter
+queryClient.removeQueries({
+  queryKey: ['posts'],
+  predicate: (query) => query.state.data?.length === 0,
+})
+
+// Clear entire cache
+queryClient.clear()
+```
+
+## Cache Memory Management
+
+TanStack Query automatically manages memory, but you can optimize:
+
+### Query Cache Size
+
+```tsx
+// The cache can grow indefinitely
+// Control size with gcTime and selective invalidation
+
+// Short gcTime for frequently changing data
+useQuery({
+  queryKey: ['notifications'],
+  queryFn: fetchNotifications,
+  gcTime: 60 * 1000,  // 1 minute
+})
+
+// Long gcTime for stable data
+useQuery({
+  queryKey: ['user-profile'],
+  queryFn: fetchProfile,
+  gcTime: 30 * 60 * 1000,  // 30 minutes
+})
+```
+
+### Manual Cleanup
+
+```tsx
+const queryClient = useQueryClient()
+
+// Remove old queries on route change
+useEffect(() => {
+  return () => {
+    queryClient.removeQueries({
+      predicate: (query) => {
+        const isOld = Date.now() - query.state.dataUpdatedAt > 10 * 60 * 1000
+        const isInactive = query.getObserversCount() === 0
+        return isOld && isInactive
+      },
+    })
+  }
+}, [pathname])
+```
+
+## Important Behaviors
+
+<Note>
+  **Stale data is still useful**: Even stale data is shown to users while fresh data loads in the background. This creates a better UX than showing loading spinners.
+</Note>
+
+<Note>
+  **Multiple observers share cache**: If multiple components use the same query key, they share the same cache entry and only one network request is made.
+</Note>
+
+<Note>
+  **GC only runs when inactive**: Garbage collection only starts when a query has zero active observers. As long as any component is using the query, it stays in cache.
+</Note>
+
+<Note>
+  **Cache survives remounts**: Cached data persists across component unmounts and remounts, avoiding unnecessary refetches.
+</Note>

@@ -1,0 +1,286 @@
+---
+title: injectQuery
+description: Angular function for fetching and caching data with signals and reactive context
+---
+
+The `injectQuery` function is the primary way to fetch and cache data in Angular Query. It returns a signal-based reactive query result that integrates with Angular's reactivity system.
+
+## Import
+
+```ts
+import { injectQuery } from '@tanstack/angular-query-experimental'
+```
+
+## Signature
+
+```ts
+function injectQuery<
+  TQueryFnData = unknown,
+  TError = DefaultError,
+  TData = TQueryFnData,
+  TQueryKey extends QueryKey = QueryKey,
+>(
+  injectQueryFn: () => CreateQueryOptions<TQueryFnData, TError, TData, TQueryKey>,
+  options?: InjectQueryOptions,
+): CreateQueryResult<TData, TError>
+```
+
+## Type Parameters
+
+- `TQueryFnData` - The type of data returned by the query function
+- `TError` - The type of error that can be thrown (defaults to `DefaultError`)
+- `TData` - The type of data returned by the select function (defaults to `TQueryFnData`)
+- `TQueryKey` - The type of the query key (defaults to `QueryKey`)
+
+## Parameters
+
+<ParamField path="injectQueryFn" type="() => CreateQueryOptions" required>
+  A function that returns the query configuration object. This function runs in a reactive context, making the query automatically reactive to signals.
+
+  <Expandable title="properties">
+    <ParamField path="queryKey" type="TQueryKey" required>
+      A unique identifier for the query. The query will automatically update when this key changes.
+
+      ```ts
+      queryKey: ['todos']
+      queryKey: ['todos', this.todoId()]
+      ```
+    </ParamField>
+
+    <ParamField path="queryFn" type="QueryFunction<TQueryFnData, TQueryKey>" required>
+      The function that the query will use to request data. Receives a `QueryFunctionContext` object.
+
+      ```ts
+      queryFn: async ({ queryKey, signal }) => {
+        const [, todoId] = queryKey
+        const response = await this.http.get(`/api/todos/${todoId}`, { signal })
+        return firstValueFrom(response)
+      }
+      ```
+    </ParamField>
+
+    <ParamField path="enabled" type="boolean" default="true">
+      Set to `false` to disable the query from automatically running. Can be reactive using signals.
+    </ParamField>
+
+    <ParamField path="staleTime" type="number | ((query: Query) => number)" default="0">
+      The time in milliseconds after data is considered stale.
+    </ParamField>
+
+    <ParamField path="gcTime" type="number | Infinity" default="300000">
+      The time in milliseconds that unused/inactive cache data remains in memory (5 minutes by default).
+    </ParamField>
+
+    <ParamField path="retry" type="boolean | number | ((failureCount: number, error: TError) => boolean)" default="3">
+      Configure retry behavior for failed queries.
+    </ParamField>
+
+    <ParamField path="refetchInterval" type="number | false | ((query: Query) => number | false)" default="false">
+      If set to a number, the query will continuously refetch at this frequency in milliseconds.
+    </ParamField>
+
+    <ParamField path="refetchOnMount" type="boolean | 'always'" default="true">
+      If set to `true`, the query will refetch on mount if the data is stale.
+    </ParamField>
+
+    <ParamField path="refetchOnWindowFocus" type="boolean | 'always'" default="true">
+      If set to `true`, the query will refetch on window focus if the data is stale.
+    </ParamField>
+
+    <ParamField path="refetchOnReconnect" type="boolean | 'always'" default="true">
+      If set to `true`, the query will refetch on reconnect if the data is stale.
+    </ParamField>
+
+    <ParamField path="select" type="(data: TQueryFnData) => TData">
+      Transform or select a part of the data returned by the query function.
+    </ParamField>
+
+    <ParamField path="initialData" type="TQueryFnData | () => TQueryFnData">
+      Initial data to use for the query. When provided, the query will start in a success state.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="options" type="InjectQueryOptions">
+  Additional configuration options.
+
+  <Expandable title="properties">
+    <ParamField path="injector" type="Injector">
+      The injector to use for creating the query. If not provided, the current injection context will be used.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Returns
+
+Returns a signal-based query result. Access properties using the signal proxy:
+
+<ResponseField name="data()" type="TData | undefined">
+  The data returned by the query function. Access via `query.data()`.
+</ResponseField>
+
+<ResponseField name="error()" type="TError | null">
+  The error object if the query failed. Access via `query.error()`.
+</ResponseField>
+
+<ResponseField name="status()" type="'pending' | 'error' | 'success'">
+  The current status of the query. Access via `query.status()`.
+</ResponseField>
+
+<ResponseField name="isPending()" type="boolean">
+  `true` if the query is in a pending state (initial load with no data).
+</ResponseField>
+
+<ResponseField name="isLoading()" type="boolean">
+  `true` if the query is fetching for the first time.
+</ResponseField>
+
+<ResponseField name="isError()" type="boolean">
+  `true` if the query has errored.
+</ResponseField>
+
+<ResponseField name="isSuccess()" type="boolean">
+  `true` if the query has successfully loaded data.
+</ResponseField>
+
+<ResponseField name="isFetching()" type="boolean">
+  `true` if the query is currently fetching (includes background refetches).
+</ResponseField>
+
+<ResponseField name="refetch()" type="() => Promise<CreateQueryResult>">
+  Function to manually refetch the query.
+</ResponseField>
+
+## Example
+
+```ts
+import { Component, signal } from '@angular/core'
+import { injectQuery } from '@tanstack/angular-query-experimental'
+import { HttpClient } from '@angular/common/http'
+import { lastValueFrom } from 'rxjs'
+
+@Component({
+  selector: 'app-todo',
+  template: `
+    @if (query.isPending()) {
+      <div>Loading...</div>
+    } @else if (query.isError()) {
+      <div>Error: {{ query.error()?.message }}</div>
+    } @else {
+      <div>{{ query.data()?.title }}</div>
+    }
+  `,
+})
+export class TodoComponent {
+  #http = inject(HttpClient)
+  todoId = signal(1)
+
+  query = injectQuery(() => ({
+    queryKey: ['todo', this.todoId()],
+    queryFn: async () => {
+      const response = this.#http.get<Todo>(
+        `https://api.example.com/todos/${this.todoId()}`
+      )
+      return lastValueFrom(response)
+    },
+    staleTime: 5000,
+  }))
+}
+```
+
+## Reactive Queries
+
+The query automatically reacts to signal changes:
+
+```ts
+import { Component, signal } from '@angular/core'
+import { injectQuery } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-todos',
+  template: `
+    <input [(ngModel)]="filter" placeholder="Filter" />
+    
+    @if (query.data(); as todos) {
+      @for (todo of todos; track todo.id) {
+        <div>{{ todo.title }}</div>
+      }
+    }
+  `,
+})
+export class TodosComponent {
+  filter = signal('')
+  enabled = signal(true)
+
+  query = injectQuery(() => ({
+    queryKey: ['todos', this.filter()],
+    queryFn: () => fetchTodos(this.filter()),
+    // Signals can be used in any option
+    enabled: this.enabled(),
+  }))
+}
+```
+
+## With Angular HttpClient
+
+```ts
+import { Component, inject } from '@angular/core'
+import { HttpClient } from '@angular/common/http'
+import { injectQuery } from '@tanstack/angular-query-experimental'
+import { lastValueFrom } from 'rxjs'
+
+interface Todo {
+  id: number
+  title: string
+  completed: boolean
+}
+
+@Component({
+  selector: 'app-todo-list',
+  template: `
+    @for (todo of query.data(); track todo.id) {
+      <div>{{ todo.title }}</div>
+    }
+  `,
+})
+export class TodoListComponent {
+  #http = inject(HttpClient)
+
+  query = injectQuery(() => ({
+    queryKey: ['todos'],
+    queryFn: async () => {
+      const response = this.#http.get<Todo[]>(
+        'https://api.example.com/todos'
+      )
+      return lastValueFrom(response)
+    },
+  }))
+}
+```
+
+## With Custom Injector
+
+```ts
+import { Component, Injector, inject } from '@angular/core'
+import { injectQuery } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-example',
+  template: `...`,
+})
+export class ExampleComponent {
+  #injector = inject(Injector)
+
+  createQuery() {
+    // Use query outside of constructor
+    const query = injectQuery(
+      () => ({
+        queryKey: ['todos'],
+        queryFn: fetchTodos,
+      }),
+      { injector: this.#injector }
+    )
+    return query
+  }
+}
+```

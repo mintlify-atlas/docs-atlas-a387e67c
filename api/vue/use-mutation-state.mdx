@@ -1,0 +1,174 @@
+---
+title: useMutationState
+description: Vue composable for accessing the state of all mutations or filtered mutations
+---
+
+The `useMutationState` composable provides access to the state of all mutations or a filtered subset of mutations from the mutation cache.
+
+## Import
+
+```vue
+import { useMutationState } from '@tanstack/vue-query'
+```
+
+## Signature
+
+```ts
+function useMutationState<TResult = MutationState>(
+  options?: MutationStateOptions<TResult> | (() => MutationStateOptions<TResult>),
+  queryClient?: QueryClient,
+): Readonly<Ref<Array<TResult>>>
+```
+
+## Parameters
+
+<ParamField path="options" type="MutationStateOptions<TResult> | (() => MutationStateOptions<TResult>)" default="{}">
+  Configuration object for filtering and selecting mutation state. Can be a plain object or a function returning options.
+
+  <Expandable title="properties">
+    <ParamField path="filters" type="MutationFilters">
+      Filters to narrow down which mutations to return.
+
+      <Expandable title="filter properties">
+        <ParamField path="mutationKey" type="MutationKey">
+          Filter mutations by mutation key.
+        </ParamField>
+
+        <ParamField path="exact" type="boolean">
+          If `true`, only mutations with an exact mutation key match will be returned.
+        </ParamField>
+
+        <ParamField path="status" type="'idle' | 'pending' | 'success' | 'error'">
+          Filter mutations by their status.
+        </ParamField>
+
+        <ParamField path="predicate" type="(mutation: Mutation) => boolean">
+          Custom function to filter mutations.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField path="select" type="(mutation: Mutation) => TResult">
+      Transform function to select specific data from each mutation.
+
+      ```ts
+      select: (mutation) => ({
+        id: mutation.state.variables?.id,
+        status: mutation.state.status,
+      })
+      ```
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="queryClient" type="QueryClient">
+  Custom QueryClient instance.
+</ParamField>
+
+## Returns
+
+<ResponseField name="result" type="Readonly<Ref<Array<TResult>>>">
+  A readonly reactive ref containing an array of mutation states (or transformed results if `select` is used).
+</ResponseField>
+
+## Example
+
+```vue
+<script setup>
+import { useMutationState } from '@tanstack/vue-query'
+
+// Get all mutation states
+const mutations = useMutationState()
+
+// Get only pending mutations
+const pendingMutations = useMutationState({
+  filters: { status: 'pending' },
+})
+
+// Get custom data from mutations
+const mutationData = useMutationState({
+  filters: { mutationKey: ['createTodo'] },
+  select: (mutation) => mutation.state.variables,
+})
+</script>
+
+<template>
+  <div>
+    <h3>All Mutations: {{ mutations.length }}</h3>
+    <h3>Pending Mutations: {{ pendingMutations.length }}</h3>
+    
+    <div v-for="(data, index) in mutationData" :key="index">
+      Creating: {{ data?.title }}
+    </div>
+  </div>
+</template>
+```
+
+## Tracking Specific Mutations
+
+```vue
+<script setup>
+import { useMutationState, useMutation } from '@tanstack/vue-query'
+
+const { mutate } = useMutation({
+  mutationKey: ['createTodo'],
+  mutationFn: createTodo,
+})
+
+const createTodoMutations = useMutationState({
+  filters: { mutationKey: ['createTodo'] },
+  select: (mutation) => ({
+    status: mutation.state.status,
+    data: mutation.state.data,
+    error: mutation.state.error,
+    submittedAt: mutation.state.submittedAt,
+  }),
+})
+</script>
+
+<template>
+  <div>
+    <button @click="mutate({ title: 'New Todo' })">
+      Create Todo
+    </button>
+
+    <h3>Recent Submissions:</h3>
+    <div v-for="(mutation, index) in createTodoMutations" :key="index">
+      <span :class="mutation.status">
+        {{ mutation.status }}
+      </span>
+      <span v-if="mutation.data">{{ mutation.data.title }}</span>
+      <span v-if="mutation.error">{{ mutation.error.message }}</span>
+    </div>
+  </div>
+</template>
+```
+
+## Reactive Filters
+
+```vue
+<script setup>
+import { useMutationState } from '@tanstack/vue-query'
+import { ref } from 'vue'
+
+const statusFilter = ref('pending')
+
+const filteredMutations = useMutationState(() => ({
+  filters: { status: statusFilter.value },
+  select: (mutation) => mutation.state,
+}))
+</script>
+
+<template>
+  <div>
+    <select v-model="statusFilter">
+      <option value="idle">Idle</option>
+      <option value="pending">Pending</option>
+      <option value="success">Success</option>
+      <option value="error">Error</option>
+    </select>
+
+    <div>{{ filteredMutations.length }} mutations with status: {{ statusFilter }}</div>
+  </div>
+</template>
+```

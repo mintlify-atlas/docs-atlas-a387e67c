@@ -1,0 +1,189 @@
+---
+title: QueryClient
+description: Solid Query's QueryClient for managing query and mutation cache
+---
+
+The `QueryClient` is the core class that manages the query and mutation cache for Solid Query. It extends the base QueryClient from `@tanstack/query-core` with Solid-specific features.
+
+## Import
+
+```tsx
+import { QueryClient } from '@tanstack/solid-query'
+```
+
+## Constructor
+
+```ts
+const queryClient = new QueryClient(config?: QueryClientConfig)
+```
+
+### Config
+
+<ParamField path="config" type="QueryClientConfig">
+  Configuration object for the QueryClient.
+
+  <Expandable title="properties">
+    <ParamField path="queryCache" type="QueryCache">
+      Custom QueryCache instance. If not provided, a new one will be created.
+    </ParamField>
+
+    <ParamField path="mutationCache" type="MutationCache">
+      Custom MutationCache instance. If not provided, a new one will be created.
+    </ParamField>
+
+    <ParamField path="defaultOptions" type="DefaultOptions">
+      Default options for queries and mutations.
+
+      ```ts
+      defaultOptions: {
+        queries: {
+          staleTime: 60 * 1000,
+          gcTime: 10 * 60 * 1000,
+          reconcile: false, // Solid-specific
+        },
+      }
+      ```
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Solid-Specific Features
+
+### Reconciliation
+
+Solid Query supports Solid's reconciliation system through the `reconcile` option:
+
+```tsx
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      reconcile: 'id', // Use 'id' field for reconciliation
+    },
+  },
+})
+```
+
+## Methods
+
+The QueryClient in Solid Query has all the same methods as the base QueryClient:
+
+### Query Data Methods
+
+<ResponseField name="getQueryData" type="<TData = unknown>(queryKey: QueryKey) => TData | undefined">
+  Returns the cached data for a query.
+
+  ```tsx
+  const data = queryClient.getQueryData(['todos'])
+  ```
+</ResponseField>
+
+<ResponseField name="setQueryData" type="<TData>(queryKey: QueryKey, updater: Updater<TData | undefined, TData | undefined>) => TData | undefined">
+  Updates the cached data for a query.
+
+  ```tsx
+  queryClient.setQueryData(['todos'], (old) => [...old, newTodo])
+  ```
+</ResponseField>
+
+<ResponseField name="getQueriesData" type="<TData = unknown>(filters: QueryFilters) => Array<[QueryKey, TData | undefined]>">
+  Returns cached data for multiple queries matching the filters.
+</ResponseField>
+
+<ResponseField name="setQueriesData" type="<TData>(filters: QueryFilters, updater: Updater<TData | undefined, TData | undefined>) => Array<[QueryKey, TData | undefined]>">
+  Updates cached data for multiple queries matching the filters.
+</ResponseField>
+
+### Invalidation Methods
+
+<ResponseField name="invalidateQueries" type="(filters?: InvalidateQueryFilters, options?: InvalidateOptions) => Promise<void>">
+  Invalidates queries and triggers refetches.
+
+  ```tsx
+  await queryClient.invalidateQueries({ queryKey: ['todos'] })
+  ```
+</ResponseField>
+
+<ResponseField name="refetchQueries" type="(filters?: RefetchQueryFilters, options?: RefetchOptions) => Promise<void>">
+  Refetches queries matching the filters.
+</ResponseField>
+
+<ResponseField name="resetQueries" type="(filters?: QueryFilters, options?: ResetOptions) => Promise<void>">
+  Resets queries to their initial state.
+</ResponseField>
+
+<ResponseField name="removeQueries" type="(filters?: QueryFilters) => void">
+  Removes queries from the cache.
+</ResponseField>
+
+<ResponseField name="cancelQueries" type="(filters?: QueryFilters, options?: CancelOptions) => Promise<void>">
+  Cancels ongoing queries.
+</ResponseField>
+
+### Fetch Methods
+
+<ResponseField name="fetchQuery" type="<TData>(options: FetchQueryOptions) => Promise<TData>">
+  Fetches a query and returns the data.
+
+  ```tsx
+  const data = await queryClient.fetchQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+  })
+  ```
+</ResponseField>
+
+<ResponseField name="prefetchQuery" type="(options: FetchQueryOptions) => Promise<void>">
+  Prefetches a query and stores it in the cache.
+</ResponseField>
+
+<ResponseField name="fetchInfiniteQuery" type="<TData>(options: FetchInfiniteQueryOptions) => Promise<InfiniteData<TData>>">
+  Fetches an infinite query.
+</ResponseField>
+
+<ResponseField name="prefetchInfiniteQuery" type="(options: FetchInfiniteQueryOptions) => Promise<void>">
+  Prefetches an infinite query.
+</ResponseField>
+
+## Example
+
+```tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/solid-query'
+import { render } from 'solid-js/web'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60 * 1000,
+      gcTime: 10 * 60 * 1000,
+      reconcile: 'id',
+    },
+  },
+})
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      {/* Your app */}
+    </QueryClientProvider>
+  )
+}
+
+render(() => <App />, document.getElementById('root'))
+```
+
+## Usage with Solid Router
+
+```tsx
+import { QueryClient } from '@tanstack/solid-query'
+import { Router } from '@solidjs/router'
+
+const queryClient = new QueryClient()
+
+// Prefetch on route navigation
+const prefetchTodo = async (id: number) => {
+  await queryClient.prefetchQuery({
+    queryKey: ['todo', id],
+    queryFn: () => fetchTodo(id),
+  })
+}
+```

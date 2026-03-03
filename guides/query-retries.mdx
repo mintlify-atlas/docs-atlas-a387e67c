@@ -1,0 +1,417 @@
+---
+title: Query Retries
+description: Configure retry logic and exponential backoff for failed queries
+---
+
+## Overview
+
+TanStack Query automatically retries failed queries with exponential backoff. By default, queries are retried **3 times** on the client and **0 times** on the server before marking them as failed.
+
+## Default Retry Behavior
+
+The retry logic is implemented in the `retryer.ts` module:
+
+```tsx
+// Default retry count
+const retry = config.retry ?? (isServer ? 0 : 3)
+
+// Default retry delay with exponential backoff
+function defaultRetryDelay(failureCount: number) {
+  return Math.min(1000 * 2 ** failureCount, 30000)
+}
+```
+
+This creates the following delay pattern:
+- 1st retry: 1 second (2^0 * 1000ms)
+- 2nd retry: 2 seconds (2^1 * 1000ms)
+- 3rd retry: 4 seconds (2^2 * 1000ms)
+- Max delay: 30 seconds
+
+## Configuring Retries
+
+### Per Query
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+// Disable retries
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  retry: false,
+})
+
+// Retry 5 times
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  retry: 5,
+})
+
+// Retry indefinitely
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  retry: true,
+})
+```
+
+### Conditional Retry
+
+Use a function to conditionally retry based on error or failure count:
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  retry: (failureCount, error) => {
+    // Don't retry on 404
+    if (error.status === 404) {
+      return false
+    }
+    // Retry up to 3 times for other errors
+    return failureCount < 3
+  },
+})
+```
+
+### Global Configuration
+
+```tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    },
+  },
+})
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      {/* Your app */}
+    </QueryClientProvider>
+  )
+}
+```
+
+## Retry Delay
+
+### Fixed Delay
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  retry: 3,
+  retryDelay: 1000, // Wait 1 second between retries
+})
+```
+
+### Custom Exponential Backoff
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  retry: 5,
+  retryDelay: (attemptIndex) => {
+    // Exponential backoff with jitter
+    const baseDelay = Math.min(1000 * 2 ** attemptIndex, 30000)
+    const jitter = Math.random() * 1000
+    return baseDelay + jitter
+  },
+})
+```
+
+### Error-Based Retry Delay
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  retryDelay: (attemptIndex, error) => {
+    // Use Retry-After header if available
+    if (error.response?.headers?.['retry-after']) {
+      return parseInt(error.response.headers['retry-after']) * 1000
+    }
+    // Otherwise use exponential backoff
+    return Math.min(1000 * 2 ** attemptIndex, 30000)
+  },
+})
+```
+
+## How Retry Works Internally
+
+The `createRetryer` function manages the retry logic:
+
+```tsx
+// From retryer.ts (simplified)
+export function createRetryer<TData = unknown, TError = DefaultError>(
+  config: RetryerConfig<TData, TError>,
+): Retryer<TData> {
+  let failureCount = 0
+  let isRetryCancelled = false
+
+  const run = () => {
+    Promise.resolve(config.fn())
+      .then(resolve)
+      .catch((error) => {
+        const retry = config.retry ?? (isServer ? 0 : 3)
+        const retryDelay = config.retryDelay ?? defaultRetryDelay
+        const delay = typeof retryDelay === 'function'
+          ? retryDelay(failureCount, error)
+          : retryDelay
+
+        const shouldRetry =
+          retry === true ||
+          (typeof retry === 'number' && failureCount < retry) ||
+          (typeof retry === 'function' && retry(failureCount, error))
+
+        if (isRetryCancelled || !shouldRetry) {
+          reject(error)
+          return
+        }
+
+        failureCount++
+        config.onFail?.(failureCount, error)
+
+        sleep(delay)
+          .then(() => canContinue() ? undefined : pause())
+          .then(() => {
+            if (!isRetryCancelled) {
+              run()
+            }
+          })
+      })
+  }
+
+  return { promise, cancel, cancelRetry, continueRetry, start }
+}
+```
+
+## Retry State Tracking
+
+Track retry attempts with query state:
+
+```tsx
+function TodoList() {
+  const { data, error, failureCount, failureReason } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    retry: 3,
+  })
+
+  return (
+    <div>
+      {failureCount > 0 && (
+        <div>Retry attempt {failureCount} of 3...</div>
+      )}
+      {error && <div>Error after {failureCount} attempts: {error.message}</div>}
+      {data && <div>{/* Render todos */}</div>}
+    </div>
+  )
+}
+```
+
+## Cancelling Retries
+
+Retries can be cancelled manually:
+
+```tsx
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+
+function TodoList() {
+  const queryClient = useQueryClient()
+  
+  const query = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    retry: 5,
+  })
+
+  const handleCancel = () => {
+    // Cancel ongoing retries
+    queryClient.cancelQueries({ queryKey: ['todos'] })
+  }
+
+  return (
+    <div>
+      {query.isError && (
+        <button onClick={handleCancel}>Cancel Retries</button>
+      )}
+    </div>
+  )
+}
+```
+
+## Retry with Network Mode
+
+Retries interact with network mode settings:
+
+```tsx
+// Only retry when online
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  retry: 3,
+  networkMode: 'online', // Default
+})
+
+// Always retry, even when offline
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  retry: 3,
+  networkMode: 'always',
+})
+```
+
+When `networkMode: 'online'` is set, retries will pause when offline and resume when connection is restored.
+
+## Advanced Patterns
+
+### Retry with Different Endpoints
+
+```tsx
+const endpoints = [
+  'https://api1.example.com',
+  'https://api2.example.com',
+  'https://api3.example.com',
+]
+
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: async ({ signal }) => {
+    let lastError
+    
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(`${endpoint}/todos`, { signal })
+        return await response.json()
+      } catch (error) {
+        lastError = error
+        continue
+      }
+    }
+    
+    throw lastError
+  },
+  retry: false, // Handle retry manually
+})
+```
+
+### Exponential Backoff with Max Retries
+
+```tsx
+const MAX_RETRIES = 5
+const BASE_DELAY = 1000
+const MAX_DELAY = 60000
+
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  retry: MAX_RETRIES,
+  retryDelay: (attemptIndex) => {
+    const exponentialDelay = Math.min(
+      BASE_DELAY * 2 ** attemptIndex,
+      MAX_DELAY
+    )
+    // Add jitter to prevent thundering herd
+    const jitter = Math.random() * 0.3 * exponentialDelay
+    return exponentialDelay + jitter
+  },
+})
+```
+
+### Circuit Breaker Pattern
+
+```tsx
+const FAILURE_THRESHOLD = 5
+const RESET_TIMEOUT = 60000
+
+let consecutiveFailures = 0
+let circuitOpen = false
+let resetTimer: NodeJS.Timeout
+
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: async () => {
+    if (circuitOpen) {
+      throw new Error('Circuit breaker is open')
+    }
+    
+    try {
+      const result = await fetchTodos()
+      consecutiveFailures = 0
+      return result
+    } catch (error) {
+      consecutiveFailures++
+      
+      if (consecutiveFailures >= FAILURE_THRESHOLD) {
+        circuitOpen = true
+        resetTimer = setTimeout(() => {
+          circuitOpen = false
+          consecutiveFailures = 0
+        }, RESET_TIMEOUT)
+      }
+      
+      throw error
+    }
+  },
+  retry: (failureCount, error) => {
+    // Don't retry if circuit is open
+    if (circuitOpen) return false
+    return failureCount < 3
+  },
+})
+```
+
+## Callbacks on Retry
+
+The retryer supports callbacks to track retry events:
+
+```tsx
+// This is done internally by TanStack Query
+const retryer = createRetryer({
+  fn: fetchTodos,
+  onFail: (failureCount, error) => {
+    console.log(`Retry ${failureCount} failed:`, error)
+  },
+  onPause: () => {
+    console.log('Retry paused (offline or unfocused)')
+  },
+  onContinue: () => {
+    console.log('Retry resumed')
+  },
+})
+```
+
+## Best Practices
+
+1. **Server-side**: Disable retries (`retry: 0`) to prevent long SSR delays
+2. **Non-idempotent operations**: Disable retries for POST/PUT/DELETE
+3. **Rate limiting**: Add jitter to prevent thundering herd
+4. **Error codes**: Don't retry 4xx client errors, only 5xx server errors
+5. **Network errors**: Use `networkMode` to handle offline scenarios
+6. **User feedback**: Show retry attempts to users during long waits
+7. **Max delay**: Cap exponential backoff to prevent excessive waits
+8. **Circuit breaker**: Implement for repeated failures to prevent cascading issues
+
+## TypeScript Types
+
+```tsx
+import type { RetryValue, RetryDelayValue } from '@tanstack/react-query'
+
+type RetryValue<TError> = 
+  | boolean 
+  | number 
+  | ((failureCount: number, error: TError) => boolean)
+
+type RetryDelayValue<TError> = 
+  | number 
+  | ((failureCount: number, error: TError) => number)
+```

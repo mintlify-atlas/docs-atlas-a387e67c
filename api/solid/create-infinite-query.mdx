@@ -1,0 +1,209 @@
+---
+title: createInfiniteQuery
+description: Solid primitive for fetching paginated or infinite scrolling data
+---
+
+The `createInfiniteQuery` primitive is used for fetching data that is paginated or loaded incrementally, such as infinite scrolling lists.
+
+## Import
+
+```tsx
+import { createInfiniteQuery } from '@tanstack/solid-query'
+```
+
+## Signature
+
+```ts
+function createInfiniteQuery<
+  TQueryFnData,
+  TError = DefaultError,
+  TData = InfiniteData<TQueryFnData>,
+  TQueryKey extends QueryKey = QueryKey,
+  TPageParam = unknown,
+>(
+  options: Accessor<UseInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>>,
+  queryClient?: Accessor<QueryClient>,
+): UseInfiniteQueryResult<TData, TError>
+```
+
+## Type Parameters
+
+- `TQueryFnData` - The type of data returned by a single page of the query function
+- `TError` - The type of error that can be thrown (defaults to `DefaultError`)
+- `TData` - The type of the final data (defaults to `InfiniteData<TQueryFnData>`)
+- `TQueryKey` - The type of the query key (defaults to `QueryKey`)
+- `TPageParam` - The type of the page parameter (defaults to `unknown`)
+
+## Parameters
+
+<ParamField path="options" type="Accessor<UseInfiniteQueryOptions>" required>
+  An accessor function that returns the infinite query configuration object.
+
+  <Expandable title="properties">
+    <ParamField path="queryKey" type="TQueryKey" required>
+      A unique identifier for the query.
+    </ParamField>
+
+    <ParamField path="queryFn" type="(context: QueryFunctionContext<TQueryKey, TPageParam>) => Promise<TQueryFnData>" required>
+      The function that fetches a page of data. Receives `pageParam` in the context.
+
+      ```ts
+      queryFn: async ({ pageParam = 0 }) => {
+        const response = await fetch(`/api/todos?cursor=${pageParam}`)
+        return response.json()
+      }
+      ```
+    </ParamField>
+
+    <ParamField path="initialPageParam" type="TPageParam" required>
+      The initial page parameter to use for the first page.
+    </ParamField>
+
+    <ParamField path="getNextPageParam" type="(lastPage: TQueryFnData, allPages: TQueryFnData[], lastPageParam: TPageParam, allPageParams: TPageParam[]) => TPageParam | undefined | null" required>
+      Function to determine the next page parameter. Return `undefined` or `null` when there are no more pages.
+
+      ```ts
+      getNextPageParam: (lastPage) => lastPage.nextCursor
+      ```
+    </ParamField>
+
+    <ParamField path="getPreviousPageParam" type="(firstPage: TQueryFnData, allPages: TQueryFnData[], firstPageParam: TPageParam, allPageParams: TPageParam[]) => TPageParam | undefined | null">
+      Function to determine the previous page parameter for bi-directional pagination.
+    </ParamField>
+
+    <ParamField path="maxPages" type="number">
+      Maximum number of pages to store in the data.
+    </ParamField>
+
+    <ParamField path="enabled" type="boolean" default="true">
+      Set to `false` to disable the query from automatically running.
+    </ParamField>
+
+    <ParamField path="reconcile" type="string | false | ((oldData: TData | undefined, newData: TData) => TData)">
+      Solid-specific reconciliation option for efficient updates.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="queryClient" type="Accessor<QueryClient>">
+  Custom QueryClient accessor.
+</ParamField>
+
+## Returns
+
+<ResponseField name="data" type="InfiniteData<TData> | undefined">
+  The accumulated data from all pages. Contains `pages` array and `pageParams` array.
+</ResponseField>
+
+<ResponseField name="error" type="TError | null">
+  The error object if the query failed.
+</ResponseField>
+
+<ResponseField name="status" type="'pending' | 'error' | 'success'">
+  The current status of the query.
+</ResponseField>
+
+<ResponseField name="isPending" type="boolean">
+  `true` if the query is in a pending state.
+</ResponseField>
+
+<ResponseField name="isFetching" type="boolean">
+  `true` if the query is currently fetching.
+</ResponseField>
+
+<ResponseField name="isFetchingNextPage" type="boolean">
+  `true` if the query is fetching the next page.
+</ResponseField>
+
+<ResponseField name="isFetchingPreviousPage" type="boolean">
+  `true` if the query is fetching the previous page.
+</ResponseField>
+
+<ResponseField name="hasNextPage" type="boolean">
+  `true` if there is a next page available to fetch.
+</ResponseField>
+
+<ResponseField name="hasPreviousPage" type="boolean">
+  `true` if there is a previous page available to fetch.
+</ResponseField>
+
+<ResponseField name="fetchNextPage" type="() => Promise<InfiniteQueryObserverResult>">
+  Function to fetch the next page.
+</ResponseField>
+
+<ResponseField name="fetchPreviousPage" type="() => Promise<InfiniteQueryObserverResult>">
+  Function to fetch the previous page.
+</ResponseField>
+
+## Example
+
+```tsx
+import { createInfiniteQuery } from '@tanstack/solid-query'
+import { For } from 'solid-js'
+
+function TodoList() {
+  const query = createInfiniteQuery(() => ({
+    queryKey: ['todos'],
+    queryFn: async ({ pageParam = 0 }) => {
+      const response = await fetch(
+        `https://api.example.com/todos?cursor=${pageParam}&limit=10`
+      )
+      return response.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  }))
+
+  return (
+    <div>
+      <For each={query.data?.pages}>
+        {(page) => (
+          <For each={page.items}>
+            {(todo) => <div>{todo.title}</div>}
+          </For>
+        )}
+      </For>
+
+      <button
+        onClick={() => query.fetchNextPage()}
+        disabled={!query.hasNextPage || query.isFetchingNextPage}
+      >
+        {query.isFetchingNextPage
+          ? 'Loading more...'
+          : query.hasNextPage
+            ? 'Load More'
+            : 'Nothing more to load'}
+      </button>
+    </div>
+  )
+}
+```
+
+## With Bi-directional Pagination
+
+```tsx
+const query = createInfiniteQuery(() => ({
+  queryKey: ['todos'],
+  queryFn: async ({ pageParam = 0 }) => {
+    const response = await fetch(
+      `https://api.example.com/todos?cursor=${pageParam}`
+    )
+    return response.json()
+  },
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+  getPreviousPageParam: (firstPage) => firstPage.prevCursor,
+}))
+
+return (
+  <div>
+    <button onClick={() => query.fetchPreviousPage()}>
+      Load Previous
+    </button>
+    {/* Pages */}
+    <button onClick={() => query.fetchNextPage()}>
+      Load Next
+    </button>
+  </div>
+)
+```

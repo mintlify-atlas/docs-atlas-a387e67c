@@ -1,0 +1,406 @@
+---
+title: Scroll Restoration
+description: Preserve scroll position when navigating between pages and returning to cached data
+---
+
+Scroll restoration ensures users return to the same scroll position when navigating back to a previously viewed page. When combined with TanStack Query's caching, this creates a seamless browsing experience.
+
+## The Problem
+
+Without scroll restoration:
+
+1. User scrolls down a long list
+2. User clicks an item to view details
+3. User navigates back to the list
+4. List resets to the top (poor UX)
+
+With scroll restoration:
+
+1. User scrolls down a long list
+2. Position is saved
+3. User navigates to detail page
+4. User returns to list
+5. **Scroll position restored automatically**
+
+## Browser Native Scroll Restoration
+
+Modern browsers provide native scroll restoration, but it doesn't always work well with client-side routing:
+
+```tsx
+// Tell the browser to handle scroll restoration
+if ('scrollRestoration' in window.history) {
+  window.history.scrollRestoration = 'auto' // Default
+  // or
+  window.history.scrollRestoration = 'manual' // Handle yourself
+}
+```
+
+## React Router v6 Scroll Restoration
+
+React Router v6 provides built-in scroll restoration:
+
+```tsx
+import { useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
+
+function ScrollToTop() {
+  const { pathname } = useLocation()
+
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pathname])
+
+  return null
+}
+
+function App() {
+  return (
+    <Router>
+      <ScrollToTop />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/posts" element={<Posts />} />
+      </Routes>
+    </Router>
+  )
+}
+```
+
+## With TanStack Query Cache
+
+Combine scroll restoration with cached query data:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+import { useEffect, useRef } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+
+function PostsList() {
+  const location = useLocation()
+  const scrollPositionRef = useRef(0)
+  const { data } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  // Save scroll position before navigating away
+  useEffect(() => {
+    const saveScrollPosition = () => {
+      scrollPositionRef.current = window.scrollY
+    }
+
+    window.addEventListener('beforeunload', saveScrollPosition)
+    return () => window.removeEventListener('beforeunload', saveScrollPosition)
+  }, [])
+
+  // Restore scroll position when data loads
+  useEffect(() => {
+    if (data && location.state?.from) {
+      window.scrollTo(0, scrollPositionRef.current)
+    }
+  }, [data, location.state])
+
+  return (
+    <div>
+      {data?.map(post => (
+        <PostCard key={post.id} post={post} />
+      ))}
+    </div>
+  )
+}
+```
+
+## Session Storage Strategy
+
+Store scroll positions in sessionStorage:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+import { useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
+
+function useScrollRestoration(key: string) {
+  const location = useLocation()
+  const scrollKey = `scroll_${key}_${location.pathname}`
+
+  useEffect(() => {
+    // Restore scroll position
+    const savedPosition = sessionStorage.getItem(scrollKey)
+    if (savedPosition) {
+      window.scrollTo(0, parseInt(savedPosition, 10))
+    }
+
+    // Save scroll position on unmount
+    return () => {
+      sessionStorage.setItem(scrollKey, String(window.scrollY))
+    }
+  }, [scrollKey])
+}
+
+function PostsList() {
+  const { data } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  useScrollRestoration('posts')
+
+  return (
+    <div>
+      {data?.map(post => (
+        <PostCard key={post.id} post={post} />
+      ))}
+    </div>
+  )
+}
+```
+
+## Custom Hook for Scroll Management
+
+```tsx
+import { useEffect, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
+
+interface ScrollPosition {
+  x: number
+  y: number
+}
+
+const scrollPositions = new Map<string, ScrollPosition>()
+
+export function useScrollRestoration() {
+  const location = useLocation()
+  const scrollRestored = useRef(false)
+
+  useEffect(() => {
+    // Restore scroll position on mount
+    const savedPosition = scrollPositions.get(location.key)
+    if (savedPosition && !scrollRestored.current) {
+      window.scrollTo(savedPosition.x, savedPosition.y)
+      scrollRestored.current = true
+    }
+
+    // Save scroll position on unmount
+    return () => {
+      scrollPositions.set(location.key, {
+        x: window.scrollX,
+        y: window.scrollY,
+      })
+    }
+  }, [location.key])
+}
+
+function PostsList() {
+  const { data } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  useScrollRestoration()
+
+  return <div>{/* Posts */}</div>
+}
+```
+
+## Next.js App Router
+
+Next.js App Router handles scroll restoration automatically, but you can customize it:
+
+```tsx
+// app/layout.tsx
+import { Suspense } from 'react'
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        <Suspense fallback={<Loading />}>
+          {children}
+        </Suspense>
+      </body>
+    </html>
+  )
+}
+
+// app/posts/page.tsx
+'use client'
+
+import { useQuery } from '@tanstack/react-query'
+import { useEffect, useRef } from 'react'
+
+export default function PostsPage() {
+  const hasRestoredScroll = useRef(false)
+  const { data } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  useEffect(() => {
+    // Next.js automatically restores scroll,
+    // but you may need to wait for data to load
+    if (data && !hasRestoredScroll.current) {
+      hasRestoredScroll.current = true
+    }
+  }, [data])
+
+  return <div>{/* Posts */}</div>
+}
+```
+
+## Infinite Query Scroll Position
+
+Restore scroll position with infinite queries:
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/react-query'
+import { useEffect, useRef } from 'react'
+
+function InfinitePostsList() {
+  const scrollPositionRef = useRef(0)
+  const hasRestoredRef = useRef(false)
+
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['posts'],
+    queryFn: ({ pageParam = 0 }) => fetchPosts(pageParam),
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    initialPageParam: 0,
+  })
+
+  // Restore scroll after data loads
+  useEffect(() => {
+    if (data && !hasRestoredRef.current) {
+      const savedPosition = sessionStorage.getItem('posts_scroll')
+      if (savedPosition) {
+        setTimeout(() => {
+          window.scrollTo(0, parseInt(savedPosition, 10))
+        }, 100)
+      }
+      hasRestoredRef.current = true
+    }
+  }, [data])
+
+  // Save scroll position
+  useEffect(() => {
+    const handleScroll = () => {
+      scrollPositionRef.current = window.scrollY
+    }
+
+    window.addEventListener('scroll', handleScroll)
+    return () => {
+      sessionStorage.setItem('posts_scroll', String(scrollPositionRef.current))
+      window.removeEventListener('scroll', handleScroll)
+    }
+  }, [])
+
+  return (
+    <div>
+      {data?.pages.map((page, i) => (
+        <div key={i}>
+          {page.posts.map(post => (
+            <PostCard key={post.id} post={post} />
+          ))}
+        </div>
+      ))}
+      {hasNextPage && (
+        <button onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+          {isFetchingNextPage ? 'Loading...' : 'Load More'}
+        </button>
+      )}
+    </div>
+  )
+}
+```
+
+## Virtualized Lists
+
+Restore scroll position with react-virtual or react-window:
+
+```tsx
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { useQuery } from '@tanstack/react-query'
+import { useRef, useEffect } from 'react'
+
+function VirtualizedList() {
+  const parentRef = useRef<HTMLDivElement>(null)
+  const scrollOffsetRef = useRef(0)
+
+  const { data } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  const virtualizer = useVirtualizer({
+    count: data?.length ?? 0,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 100,
+    initialOffset: scrollOffsetRef.current,
+  })
+
+  // Save scroll offset
+  useEffect(() => {
+    return () => {
+      scrollOffsetRef.current = virtualizer.scrollOffset ?? 0
+    }
+  }, [virtualizer])
+
+  return (
+    <div ref={parentRef} style={{ height: '600px', overflow: 'auto' }}>
+      <div style={{ height: `${virtualizer.getTotalSize()}px` }}>
+        {virtualizer.getVirtualItems().map((virtualRow) => (
+          <div
+            key={virtualRow.index}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: `${virtualRow.size}px`,
+              transform: `translateY(${virtualRow.start}px)`,
+            }}
+          >
+            <PostCard post={data[virtualRow.index]} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+```
+
+<Warning>
+**Wait for Data Before Restoring**
+
+Restoring scroll position before content loads can cause issues:
+
+```tsx
+// Bad: Restores before content renders
+useEffect(() => {
+  window.scrollTo(0, savedPosition)
+}, [])
+
+// Good: Waits for data
+useEffect(() => {
+  if (data) {
+    window.scrollTo(0, savedPosition)
+  }
+}, [data])
+```
+
+If you restore scroll before the content renders, the browser may scroll back to the top when content loads and changes the page height.
+</Warning>
+
+## Best Practices
+
+1. **Save position on unmount** - Store scroll position when user navigates away
+2. **Restore after data loads** - Wait for content to render before scrolling
+3. **Use location key** - Track scroll per navigation entry, not just per route
+4. **Clean up old positions** - Remove old scroll positions to prevent memory leaks
+5. **Handle infinite queries** - Account for dynamically loaded content
+6. **Test with cached data** - Ensure it works when returning to cached pages
+7. **Provide visual feedback** - Show loading state while restoring position
+8. **Consider mobile** - Test on mobile devices where scroll restoration is more noticeable

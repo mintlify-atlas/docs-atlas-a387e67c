@@ -1,0 +1,492 @@
+---
+title: Infinite Queries
+description: Implement infinite scrolling and load more patterns with useInfiniteQuery
+---
+
+Infinite queries are perfect for implementing "load more" buttons and infinite scroll patterns. TanStack Query's `useInfiniteQuery` hook manages the complexity of fetching and caching paginated data.
+
+## Basic Infinite Query
+
+Here's a real example from the TanStack Query source:
+
+```tsx
+import React from 'react'
+import { useInfiniteQuery } from '@tanstack/react-query'
+
+type Project = {
+  name: string
+  id: number
+}
+
+type ProjectsResponse = {
+  data: Project[]
+  previousId: number | null
+  nextId: number | null
+}
+
+function Projects() {
+  const {
+    status,
+    data,
+    error,
+    isFetching,
+    isFetchingNextPage,
+    isFetchingPreviousPage,
+    fetchNextPage,
+    fetchPreviousPage,
+    hasNextPage,
+    hasPreviousPage,
+  } = useInfiniteQuery({
+    queryKey: ['projects'],
+    queryFn: async ({ pageParam }): Promise<ProjectsResponse> => {
+      const response = await fetch(`/api/projects?cursor=${pageParam}`)
+      return await response.json()
+    },
+    initialPageParam: 0,
+    getPreviousPageParam: (firstPage) => firstPage.previousId ?? undefined,
+    getNextPageParam: (lastPage) => lastPage.nextId ?? undefined,
+  })
+
+  return (
+    <div>
+      {status === 'pending' ? (
+        <p>Loading...</p>
+      ) : status === 'error' ? (
+        <span>Error: {error.message}</span>
+      ) : (
+        <>
+          <button
+            onClick={() => fetchPreviousPage()}
+            disabled={!hasPreviousPage || isFetchingPreviousPage}
+          >
+            {isFetchingPreviousPage
+              ? 'Loading more...'
+              : hasPreviousPage
+              ? 'Load Older'
+              : 'Nothing more to load'}
+          </button>
+          
+          {data.pages.map((page) => (
+            <React.Fragment key={page.nextId}>
+              {page.data.map((project) => (
+                <p key={project.id}>{project.name}</p>
+              ))}
+            </React.Fragment>
+          ))}
+          
+          <button
+            onClick={() => fetchNextPage()}
+            disabled={!hasNextPage || isFetchingNextPage}
+          >
+            {isFetchingNextPage
+              ? 'Loading more...'
+              : hasNextPage
+              ? 'Load Newer'
+              : 'Nothing more to load'}
+          </button>
+          
+          <div>
+            {isFetching && !isFetchingNextPage
+              ? 'Background Updating...'
+              : null}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+```
+
+## Infinite Scroll with Intersection Observer
+
+Implement automatic infinite scrolling using the Intersection Observer API:
+
+```tsx
+import React from 'react'
+import { useInfiniteQuery } from '@tanstack/react-query'
+import { useInView } from 'react-intersection-observer'
+
+type Project = {
+  name: string
+  id: number
+}
+
+type ProjectsResponse = {
+  data: Project[]
+  previousId: number
+  nextId: number
+}
+
+function InfiniteScroll() {
+  const { ref, inView } = useInView()
+
+  const {
+    status,
+    data,
+    error,
+    isFetching,
+    isFetchingNextPage,
+    fetchNextPage,
+    hasNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['projects'],
+    queryFn: async ({ pageParam }): Promise<ProjectsResponse> => {
+      const response = await fetch(`/api/projects?cursor=${pageParam}`)
+      return await response.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextId,
+  })
+
+  React.useEffect(() => {
+    if (inView && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage()
+    }
+  }, [inView, hasNextPage, isFetchingNextPage, fetchNextPage])
+
+  return (
+    <div>
+      <h1>Infinite Loading</h1>
+      {status === 'pending' ? (
+        <p>Loading...</p>
+      ) : status === 'error' ? (
+        <span>Error: {error.message}</span>
+      ) : (
+        <>
+          {data.pages.map((page) => (
+            <React.Fragment key={page.nextId}>
+              {page.data.map((project) => (
+                <div
+                  key={project.id}
+                  style={{
+                    border: '1px solid gray',
+                    borderRadius: '5px',
+                    padding: '10rem 1rem',
+                    background: `hsla(${project.id * 30}, 60%, 80%, 1)`,
+                  }}
+                >
+                  {project.name}
+                </div>
+              ))}
+            </React.Fragment>
+          ))}
+          
+          <button
+            ref={ref}
+            onClick={() => fetchNextPage()}
+            disabled={!hasNextPage || isFetchingNextPage}
+          >
+            {isFetchingNextPage
+              ? 'Loading more...'
+              : hasNextPage
+              ? 'Load Newer'
+              : 'Nothing more to load'}
+          </button>
+          
+          <div>
+            {isFetching && !isFetchingNextPage
+              ? 'Background Updating...'
+              : null}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+```
+
+## Page Params and Cursors
+
+### Cursor-Based Pagination
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/react-query'
+
+type Post = {
+  id: string
+  title: string
+  createdAt: string
+}
+
+type PostsPage = {
+  posts: Post[]
+  nextCursor: string | null
+}
+
+function Posts() {
+  const { data, fetchNextPage, hasNextPage } = useInfiniteQuery({
+    queryKey: ['posts'],
+    queryFn: async ({ pageParam }): Promise<PostsPage> => {
+      const res = await fetch(`/api/posts?cursor=${pageParam}`)
+      return res.json()
+    },
+    initialPageParam: '',
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  })
+
+  return (
+    <div>
+      {data?.pages.map((page, i) => (
+        <React.Fragment key={i}>
+          {page.posts.map((post) => (
+            <article key={post.id}>
+              <h2>{post.title}</h2>
+            </article>
+          ))}
+        </React.Fragment>
+      ))}
+      {hasNextPage && (
+        <button onClick={() => fetchNextPage()}>Load More</button>
+      )}
+    </div>
+  )
+}
+```
+
+### Offset-Based Pagination
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/react-query'
+
+type PostsPage = {
+  posts: Post[]
+  total: number
+}
+
+function Posts() {
+  const pageSize = 10
+
+  const { data, fetchNextPage, hasNextPage } = useInfiniteQuery({
+    queryKey: ['posts'],
+    queryFn: async ({ pageParam }): Promise<PostsPage> => {
+      const res = await fetch(
+        `/api/posts?offset=${pageParam}&limit=${pageSize}`
+      )
+      return res.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const nextOffset = allPages.length * pageSize
+      return nextOffset < lastPage.total ? nextOffset : undefined
+    },
+  })
+
+  return (
+    <div>
+      {data?.pages.map((page, i) => (
+        <React.Fragment key={i}>
+          {page.posts.map((post) => (
+            <article key={post.id}>
+              <h2>{post.title}</h2>
+            </article>
+          ))}
+        </React.Fragment>
+      ))}
+      {hasNextPage && (
+        <button onClick={() => fetchNextPage()}>Load More</button>
+      )}
+    </div>
+  )
+}
+```
+
+## Limiting Pages with maxPages
+
+Limit the number of pages kept in memory:
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/react-query'
+
+function Projects() {
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['projects'],
+    queryFn: async ({ pageParam }) => {
+      const response = await fetch(`/api/projects?cursor=${pageParam}`)
+      return await response.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextId ?? undefined,
+    maxPages: 3, // Only keep 3 pages in memory
+  })
+
+  return (
+    <div>
+      <h3>3 pages max</h3>
+      {data?.pages.map((page) => (
+        <React.Fragment key={page.nextId}>
+          {page.data.map((project) => (
+            <p key={project.id}>{project.name}</p>
+          ))}
+        </React.Fragment>
+      ))}
+      <button onClick={() => fetchNextPage()} disabled={!hasNextPage}>
+        Load More
+      </button>
+    </div>
+  )
+}
+```
+
+<Warning>
+  When using `maxPages`, older pages are automatically removed when the limit is exceeded. This is useful for memory management in long-running infinite scroll scenarios.
+</Warning>
+
+## Bi-directional Scrolling
+
+Implement both "load more" and "load previous" functionality:
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/react-query'
+
+function Chat() {
+  const {
+    data,
+    fetchNextPage,
+    fetchPreviousPage,
+    hasNextPage,
+    hasPreviousPage,
+    isFetchingNextPage,
+    isFetchingPreviousPage,
+  } = useInfiniteQuery({
+    queryKey: ['messages'],
+    queryFn: async ({ pageParam }) => {
+      const res = await fetch(`/api/messages?cursor=${pageParam}`)
+      return res.json()
+    },
+    initialPageParam: Date.now(),
+    getPreviousPageParam: (firstPage) => firstPage.previousCursor,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+
+  return (
+    <div>
+      <button
+        onClick={() => fetchPreviousPage()}
+        disabled={!hasPreviousPage || isFetchingPreviousPage}
+      >
+        {isFetchingPreviousPage ? 'Loading...' : 'Load Older Messages'}
+      </button>
+
+      {data?.pages.map((page, i) => (
+        <React.Fragment key={i}>
+          {page.messages.map((message) => (
+            <div key={message.id}>{message.text}</div>
+          ))}
+        </React.Fragment>
+      ))}
+
+      <button
+        onClick={() => fetchNextPage()}
+        disabled={!hasNextPage || isFetchingNextPage}
+      >
+        {isFetchingNextPage ? 'Loading...' : 'Load Newer Messages'}
+      </button>
+    </div>
+  )
+}
+```
+
+## Refetching Infinite Queries
+
+### Manual Refetch
+
+```tsx
+const { data, refetch } = useInfiniteQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
+
+// Refetch all pages
+<button onClick={() => refetch()}>Refresh All</button>
+```
+
+### Invalidating Infinite Queries
+
+```tsx
+import { useQueryClient, useMutation, useInfiniteQuery } from '@tanstack/react-query'
+
+function PostList() {
+  const queryClient = useQueryClient()
+  
+  const { data } = useInfiniteQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+  
+  const addPostMutation = useMutation({
+    mutationFn: createPost,
+    onSuccess: () => {
+      // Invalidate and refetch all pages
+      queryClient.invalidateQueries({ queryKey: ['posts'] })
+    },
+  })
+}
+```
+
+## Selecting Data from Pages
+
+Transform infinite query data:
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/react-query'
+
+function Posts() {
+  const { data } = useInfiniteQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    select: (data) => ({
+      pages: data.pages.map((page) => ({
+        ...page,
+        posts: page.posts.filter((post) => post.published),
+      })),
+      pageParams: data.pageParams,
+    }),
+  })
+
+  // Only published posts are included
+}
+```
+
+## Getting Flattened Data
+
+Flatten all pages into a single array:
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/react-query'
+
+function Posts() {
+  const { data } = useInfiniteQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+
+  // Flatten all posts from all pages
+  const allPosts = data?.pages.flatMap((page) => page.posts) ?? []
+
+  return (
+    <div>
+      {allPosts.map((post) => (
+        <article key={post.id}>
+          <h2>{post.title}</h2>
+        </article>
+      ))}
+    </div>
+  )
+}
+```
+
+<Warning>
+  **Memory Consideration**: Be cautious when flattening infinite query data. For very long lists, consider using virtualization libraries like `@tanstack/react-virtual` to render only visible items.
+</Warning>

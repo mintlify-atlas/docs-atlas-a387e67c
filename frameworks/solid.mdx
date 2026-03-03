@@ -1,0 +1,509 @@
+---
+title: Solid Query
+description: Fine-grained reactive primitives for fetching, caching and updating asynchronous data in Solid.js applications
+---
+
+# Solid Query
+
+TanStack Solid Query provides fine-grained reactive primitives for managing server state in Solid.js applications. It leverages Solid's reactivity system for optimal performance and automatic updates.
+
+## Installation
+
+```bash
+npm install @tanstack/solid-query
+# or
+pnpm add @tanstack/solid-query
+# or
+yarn add @tanstack/solid-query
+```
+
+## Quick Start
+
+Wrap your application with `QueryClientProvider`:
+
+```tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/solid-query'
+import { render } from 'solid-js/web'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      gcTime: 1000 * 60 * 60 * 24, // 24 hours
+    },
+  },
+})
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <YourApp />
+    </QueryClientProvider>
+  )
+}
+
+render(() => <App />, document.getElementById('root')!)
+```
+
+## Core Primitives
+
+### useQuery
+
+Create a reactive query that automatically tracks dependencies:
+
+```tsx
+import { useQuery } from '@tanstack/solid-query'
+import { createSignal, Show } from 'solid-js'
+
+type Post = {
+  id: number
+  title: string
+  body: string
+}
+
+function Posts() {
+  const postsQuery = useQuery(() => ({
+    queryKey: ['posts'],
+    queryFn: async (): Promise<Post[]> => {
+      const response = await fetch('https://api.example.com/posts')
+      return await response.json()
+    },
+  }))
+
+  return (
+    <div>
+      <Show when={postsQuery.isPending}>
+        <div>Loading...</div>
+      </Show>
+      <Show when={postsQuery.error}>
+        <div>Error: {postsQuery.error.message}</div>
+      </Show>
+      <Show when={postsQuery.data}>
+        <For each={postsQuery.data}>
+          {(post) => <div>{post.title}</div>}
+        </For>
+        <Show when={postsQuery.isFetching}>
+          <div>Background Updating...</div>
+        </Show>
+      </Show>
+    </div>
+  )
+}
+```
+
+### Reactive Query Keys
+
+Query options are wrapped in a function for fine-grained reactivity:
+
+```tsx
+import { useQuery, keepPreviousData } from '@tanstack/solid-query'
+import { createSignal } from 'solid-js'
+
+function Pokemon() {
+  const [pokemonId, setPokemonId] = createSignal('1')
+
+  // Query automatically refetches when pokemonId changes
+  const pokemon = useQuery(() => ({
+    queryKey: ['pokemon', pokemonId()],
+    queryFn: async () => {
+      const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokemonId()}`)
+      return res.json()
+    },
+    placeholderData: keepPreviousData,
+  }))
+
+  return (
+    <div>
+      <Show when={pokemon.data}>
+        <h1>{pokemon.data.name}</h1>
+      </Show>
+      <button onClick={() => setPokemonId((prev) => String(Number(prev) + 1))}>
+        Next Pokemon
+      </button>
+    </div>
+  )
+}
+```
+
+### useMutation
+
+Perform mutations with automatic cache updates:
+
+```tsx
+import { useMutation, useQueryClient } from '@tanstack/solid-query'
+
+function CreatePost() {
+  const queryClient = useQueryClient()
+
+  const mutation = useMutation(() => ({
+    mutationFn: async (newPost: { title: string; body: string }) => {
+      const response = await fetch('https://api.example.com/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPost),
+      })
+      return response.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['posts'] })
+    },
+  }))
+
+  const handleSubmit = () => {
+    mutation.mutate({ title: 'New Post', body: 'Content' })
+  }
+
+  return (
+    <button onClick={handleSubmit} disabled={mutation.isPending}>
+      {mutation.isPending ? 'Creating...' : 'Create Post'}
+    </button>
+  )
+}
+```
+
+### useInfiniteQuery
+
+Implement infinite scrolling with fine-grained updates:
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/solid-query'
+import { For, Show } from 'solid-js'
+
+function InfinitePosts() {
+  const query = useInfiniteQuery(() => ({
+    queryKey: ['posts'],
+    queryFn: async ({ pageParam = 0 }) => {
+      const res = await fetch(`/api/posts?cursor=${pageParam}`)
+      return res.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  }))
+
+  return (
+    <div>
+      <For each={query.data?.pages}>
+        {(page) => (
+          <For each={page.posts}>
+            {(post) => <div>{post.title}</div>}
+          </For>
+        )}
+      </For>
+      <button
+        onClick={() => query.fetchNextPage()}
+        disabled={!query.hasNextPage || query.isFetchingNextPage}
+      >
+        <Show
+          when={query.isFetchingNextPage}
+          fallback="Load More"
+        >
+          Loading...
+        </Show>
+      </button>
+    </div>
+  )
+}
+```
+
+### useQueries
+
+Execute multiple queries with individual tracking:
+
+```tsx
+import { useQueries } from '@tanstack/solid-query'
+import { For } from 'solid-js'
+
+function Users() {
+  const userIds = [1, 2, 3]
+
+  const results = useQueries(() => ({
+    queries: userIds.map((id) => ({
+      queryKey: ['user', id],
+      queryFn: () => fetchUser(id),
+    })),
+  }))
+
+  return (
+    <For each={results}>
+      {(result, i) => (
+        <div>
+          <Show when={result.data} fallback="Loading...">
+            {result.data.name}
+          </Show>
+        </div>
+      )}
+    </For>
+  )
+}
+```
+
+## Solid-Specific Features
+
+### Store Reconciliation
+
+Use `reconcile` for efficient array updates:
+
+```tsx
+import { useQuery, keepPreviousData } from '@tanstack/solid-query'
+
+function PokemonStats({ id }: { id: string }) {
+  const stats = useQuery(() => ({
+    queryKey: ['pokemon', id],
+    queryFn: async () => {
+      const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`)
+      return res.json()
+    },
+    select(data) {
+      return data.stats.map((stat: any) => ({
+        name: stat.stat.name,
+        value: stat.base_stat,
+      }))
+    },
+    placeholderData: keepPreviousData,
+    reconcile: 'name', // Reconcile by name property
+  }))
+
+  return (
+    <For each={stats.data}>
+      {(stat) => (
+        <div>
+          {stat.name}: {stat.value}
+        </div>
+      )}
+    </For>
+  )
+}
+```
+
+### Suspense Integration
+
+Solid Query works seamlessly with Suspense:
+
+```tsx
+import { Suspense } from 'solid-js'
+import { useQuery } from '@tanstack/solid-query'
+
+function Post({ id }: { id: number }) {
+  const post = useQuery(() => ({
+    queryKey: ['post', id],
+    queryFn: () => fetchPost(id),
+  }))
+
+  return <div>{post.data.title}</div>
+}
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <Post id={1} />
+    </Suspense>
+  )
+}
+```
+
+### useQueryClient
+
+Access the QueryClient for manual cache operations:
+
+```tsx
+import { useQueryClient } from '@tanstack/solid-query'
+
+function Component() {
+  const queryClient = useQueryClient()
+
+  const prefetchPost = (id: number) => {
+    queryClient.prefetchQuery({
+      queryKey: ['post', id],
+      queryFn: () => fetchPost(id),
+    })
+  }
+
+  return (
+    <div onMouseEnter={() => prefetchPost(1)}>
+      Hover to prefetch
+    </div>
+  )
+}
+```
+
+## Helper Functions
+
+### queryOptions
+
+Create type-safe, reusable query options:
+
+```tsx
+import { queryOptions, useQuery } from '@tanstack/solid-query'
+
+const postQueryOptions = (id: number) => queryOptions({
+  queryKey: ['post', id],
+  queryFn: () => fetchPost(id),
+})
+
+function Post({ id }: { id: number }) {
+  const post = useQuery(() => postQueryOptions(id))
+  return <div>{post.data?.title}</div>
+}
+```
+
+### infiniteQueryOptions
+
+Create type-safe infinite query options:
+
+```tsx
+import { infiniteQueryOptions } from '@tanstack/solid-query'
+
+const postsInfiniteOptions = infiniteQueryOptions({
+  queryKey: ['posts'],
+  queryFn: ({ pageParam = 0 }) => fetchPosts(pageParam),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
+```
+
+## State Tracking
+
+### useIsFetching
+
+Track global fetching state:
+
+```tsx
+import { useIsFetching } from '@tanstack/solid-query'
+import { Show } from 'solid-js'
+
+function GlobalLoader() {
+  const isFetching = useIsFetching()
+
+  return (
+    <Show when={isFetching() > 0}>
+      <div>Queries running: {isFetching()}</div>
+    </Show>
+  )
+}
+```
+
+### useIsMutating
+
+Track global mutation state:
+
+```tsx
+import { useIsMutating } from '@tanstack/solid-query'
+
+function MutationIndicator() {
+  const isMutating = useIsMutating()
+
+  return (
+    <Show when={isMutating() > 0}>
+      <div>Mutations: {isMutating()}</div>
+    </Show>
+  )
+}
+```
+
+### useMutationState
+
+Access all mutation states:
+
+```tsx
+import { useMutationState } from '@tanstack/solid-query'
+
+function PendingMutations() {
+  const pending = useMutationState(() => ({
+    filters: { status: 'pending' },
+    select: (mutation) => mutation.state.variables,
+  }))
+
+  return <div>Pending: {pending().length}</div>
+}
+```
+
+## SSR Support
+
+### IsRestoringProvider
+
+Provide restoration context for SSR:
+
+```tsx
+import { IsRestoringProvider, useIsRestoring } from '@tanstack/solid-query'
+
+function App() {
+  return (
+    <IsRestoringProvider>
+      <YourApp />
+    </IsRestoringProvider>
+  )
+}
+
+function Component() {
+  const isRestoring = useIsRestoring()
+
+  return (
+    <Show when={!isRestoring()} fallback="Restoring...">
+      <Content />
+    </Show>
+  )
+}
+```
+
+## Devtools
+
+Install the devtools for debugging:
+
+```bash
+npm install @tanstack/solid-query-devtools
+```
+
+```tsx
+import { SolidQueryDevtools } from '@tanstack/solid-query-devtools'
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <SolidQueryDevtools />
+      <YourApp />
+    </QueryClientProvider>
+  )
+}
+```
+
+## TypeScript Support
+
+Solid Query provides full type inference:
+
+```tsx
+type Post = { id: number; title: string; body: string }
+type PostError = { message: string }
+
+const post = useQuery<Post, PostError>(() => ({
+  queryKey: ['post', 1],
+  queryFn: fetchPost,
+}))
+// post.data is Accessor<Post | undefined>
+// post.error is Accessor<PostError | null>
+```
+
+## Best Practices
+
+- Wrap query options in functions for fine-grained reactivity
+- Use `Show` and `For` components for conditional rendering
+- Leverage `keepPreviousData` for smoother transitions
+- Use `reconcile` option for efficient array updates
+- Enable store reconciliation with the `reconcile` key
+- Integrate with Suspense for declarative loading states
+- Use signals for dynamic query parameters
+
+## Migration from createQuery
+
+The `createQuery` API has been deprecated in favor of `useQuery`:
+
+```tsx
+// Old (deprecated)
+const query = createQuery(() => ({ queryKey: ['posts'], queryFn: fetchPosts }))
+
+// New (recommended)
+const query = useQuery(() => ({ queryKey: ['posts'], queryFn: fetchPosts }))
+```
+
+## Related Packages
+
+- `@tanstack/solid-query-devtools` - Developer tools for Solid Query
+- `@tanstack/solid-query-persist-client` - Persist cache to storage

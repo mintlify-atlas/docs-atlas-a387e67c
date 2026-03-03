@@ -1,0 +1,471 @@
+---
+title: QueryClient
+description: The QueryClient manages queries and mutations for TanStack Query.
+---
+
+The `QueryClient` can be used to interact with a cache and provides methods to fetch, invalidate, and manage queries and mutations.
+
+## Constructor
+
+```typescript
+const queryClient = new QueryClient(config?: QueryClientConfig)
+```
+
+<ParamField path="config" type="QueryClientConfig" optional>
+  Configuration object for the QueryClient
+  
+  <ParamField path="config.queryCache" type="QueryCache" optional>
+    Custom QueryCache instance. If not provided, a new QueryCache will be created.
+  </ParamField>
+  
+  <ParamField path="config.mutationCache" type="MutationCache" optional>
+    Custom MutationCache instance. If not provided, a new MutationCache will be created.
+  </ParamField>
+  
+  <ParamField path="config.defaultOptions" type="DefaultOptions" optional>
+    Default options for queries and mutations
+  </ParamField>
+</ParamField>
+
+## Methods
+
+### mount
+
+Mounts the QueryClient and subscribes to focus and online managers.
+
+```typescript
+queryClient.mount(): void
+```
+
+Internal mount count is tracked - subscriptions are only created on the first mount.
+
+### unmount
+
+Unmounts the QueryClient and unsubscribes from focus and online managers.
+
+```typescript
+queryClient.unmount(): void
+```
+
+Subscriptions are only removed when the mount count reaches zero.
+
+### getQueryData
+
+Imperative (non-reactive) way to retrieve data for a query key.
+
+```typescript
+queryClient.getQueryData<TQueryFnData, TTaggedQueryKey>(queryKey: TTaggedQueryKey): TInferredQueryFnData | undefined
+```
+
+<ParamField path="queryKey" type="QueryKey" required>
+  The query key to get data for
+</ParamField>
+
+**Returns:** The cached data for the query, or `undefined` if not found.
+
+**Example:**
+```typescript
+const data = queryClient.getQueryData(['todos'])
+```
+
+<Warning>
+  Do not use this function inside a component, because it won't receive updates. Use `useQuery` to create a `QueryObserver` that subscribes to changes.
+</Warning>
+
+### setQueryData
+
+Sets or updates data for a query key.
+
+```typescript
+queryClient.setQueryData<TQueryFnData, TTaggedQueryKey>(
+  queryKey: TTaggedQueryKey,
+  updater: Updater<TInferredQueryFnData | undefined, TInferredQueryFnData | undefined>,
+  options?: SetDataOptions
+): TInferredQueryFnData | undefined
+```
+
+<ParamField path="queryKey" type="QueryKey" required>
+  The query key to set data for
+</ParamField>
+
+<ParamField path="updater" type="Updater" required>
+  A value or function that receives the old data and returns the new data
+</ParamField>
+
+<ParamField path="options" type="SetDataOptions" optional>
+  <ParamField path="options.updatedAt" type="number" optional>
+    Custom timestamp for when the data was updated
+  </ParamField>
+</ParamField>
+
+**Example:**
+```typescript
+queryClient.setQueryData(['todos'], (old) => [...old, newTodo])
+```
+
+### getQueriesData
+
+Gets data for multiple queries matching the filters.
+
+```typescript
+queryClient.getQueriesData<TQueryFnData>(filters: QueryFilters): Array<[QueryKey, TQueryFnData | undefined]>
+```
+
+<ParamField path="filters" type="QueryFilters" required>
+  Filters to match queries
+</ParamField>
+
+**Returns:** Array of tuples containing query keys and their data.
+
+### setQueriesData
+
+Sets data for multiple queries matching the filters.
+
+```typescript
+queryClient.setQueriesData<TQueryFnData>(
+  filters: QueryFilters,
+  updater: Updater<TQueryFnData | undefined, TQueryFnData | undefined>,
+  options?: SetDataOptions
+): Array<[QueryKey, TQueryFnData | undefined]>
+```
+
+### getQueryState
+
+Gets the full state object for a query.
+
+```typescript
+queryClient.getQueryState<TQueryFnData, TError>(queryKey: QueryKey): QueryState<TQueryFnData, TError> | undefined
+```
+
+**Returns:** The query state including data, error, status, and metadata.
+
+### fetchQuery
+
+Fetches a query and returns a promise that resolves with the data.
+
+```typescript
+queryClient.fetchQuery<TQueryFnData, TError, TData, TQueryKey>(
+  options: FetchQueryOptions<TQueryFnData, TError, TData, TQueryKey>
+): Promise<TData>
+```
+
+<ParamField path="options" type="FetchQueryOptions" required>
+  <ParamField path="options.queryKey" type="QueryKey" required>
+    Unique key for the query
+  </ParamField>
+  
+  <ParamField path="options.queryFn" type="QueryFunction" optional>
+    The function that the query will use to request data
+  </ParamField>
+  
+  <ParamField path="options.staleTime" type="number | 'static'" optional>
+    Time in milliseconds after data is considered stale
+  </ParamField>
+</ParamField>
+
+**Example:**
+```typescript
+const data = await queryClient.fetchQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+})
+```
+
+### prefetchQuery
+
+Prefetches a query and caches the result. Does not return the data.
+
+```typescript
+queryClient.prefetchQuery<TQueryFnData, TError, TData, TQueryKey>(
+  options: FetchQueryOptions<TQueryFnData, TError, TData, TQueryKey>
+): Promise<void>
+```
+
+**Example:**
+```typescript
+await queryClient.prefetchQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+})
+```
+
+### ensureQueryData
+
+Ensures that data for a query is available. If cached data exists, it's returned. Otherwise, the query is fetched.
+
+```typescript
+queryClient.ensureQueryData<TQueryFnData, TError, TData, TQueryKey>(
+  options: EnsureQueryDataOptions<TQueryFnData, TError, TData, TQueryKey>
+): Promise<TData>
+```
+
+<ParamField path="options.revalidateIfStale" type="boolean" optional>
+  If true, stale data will trigger a background refetch
+</ParamField>
+
+### fetchInfiniteQuery
+
+Fetches an infinite query.
+
+```typescript
+queryClient.fetchInfiniteQuery<TQueryFnData, TError, TData, TQueryKey, TPageParam>(
+  options: FetchInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>
+): Promise<InfiniteData<TData, TPageParam>>
+```
+
+<ParamField path="options" type="FetchInfiniteQueryOptions" required>
+  <ParamField path="options.initialPageParam" type="TPageParam" required>
+    The default page param to use when fetching the first page
+  </ParamField>
+  
+  <ParamField path="options.getNextPageParam" type="GetNextPageParamFunction" optional>
+    Function to get the next page param
+  </ParamField>
+  
+  <ParamField path="options.getPreviousPageParam" type="GetPreviousPageParamFunction" optional>
+    Function to get the previous page param
+  </ParamField>
+  
+  <ParamField path="options.pages" type="number" optional>
+    Number of pages to fetch
+  </ParamField>
+</ParamField>
+
+### prefetchInfiniteQuery
+
+Prefetches an infinite query.
+
+```typescript
+queryClient.prefetchInfiniteQuery<TQueryFnData, TError, TData, TQueryKey, TPageParam>(
+  options: FetchInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>
+): Promise<void>
+```
+
+### ensureInfiniteQueryData
+
+Ensures that infinite query data is available.
+
+```typescript
+queryClient.ensureInfiniteQueryData<TQueryFnData, TError, TData, TQueryKey, TPageParam>(
+  options: EnsureInfiniteQueryDataOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>
+): Promise<InfiniteData<TData, TPageParam>>
+```
+
+### invalidateQueries
+
+Invalidates queries matching the filters, marking them as stale and potentially refetching them.
+
+```typescript
+queryClient.invalidateQueries<TTaggedQueryKey>(
+  filters?: InvalidateQueryFilters<TTaggedQueryKey>,
+  options?: InvalidateOptions
+): Promise<void>
+```
+
+<ParamField path="filters" type="InvalidateQueryFilters" optional>
+  <ParamField path="filters.queryKey" type="QueryKey" optional>
+    Query key to filter by
+  </ParamField>
+  
+  <ParamField path="filters.exact" type="boolean" optional>
+    If true, only queries with the exact key will be matched
+  </ParamField>
+  
+  <ParamField path="filters.refetchType" type="'active' | 'inactive' | 'all' | 'none'" optional>
+    Which queries to refetch. Defaults to 'active'
+  </ParamField>
+</ParamField>
+
+**Example:**
+```typescript
+await queryClient.invalidateQueries({ queryKey: ['todos'] })
+```
+
+### refetchQueries
+
+Refetches queries matching the filters.
+
+```typescript
+queryClient.refetchQueries<TTaggedQueryKey>(
+  filters?: RefetchQueryFilters<TTaggedQueryKey>,
+  options?: RefetchOptions
+): Promise<void>
+```
+
+<ParamField path="options" type="RefetchOptions" optional>
+  <ParamField path="options.cancelRefetch" type="boolean" optional>
+    If true, cancels any running queries before refetching. Defaults to true
+  </ParamField>
+  
+  <ParamField path="options.throwOnError" type="boolean" optional>
+    If true, throws errors instead of catching them
+  </ParamField>
+</ParamField>
+
+### cancelQueries
+
+Cancels ongoing queries matching the filters.
+
+```typescript
+queryClient.cancelQueries<TTaggedQueryKey>(
+  filters?: QueryFilters<TTaggedQueryKey>,
+  cancelOptions?: CancelOptions
+): Promise<void>
+```
+
+<ParamField path="cancelOptions" type="CancelOptions" optional>
+  <ParamField path="cancelOptions.revert" type="boolean" optional>
+    If true, reverts to the previous data. Defaults to true
+  </ParamField>
+  
+  <ParamField path="cancelOptions.silent" type="boolean" optional>
+    If true, doesn't notify observers
+  </ParamField>
+</ParamField>
+
+### resetQueries
+
+Resets queries to their initial state and optionally refetches them.
+
+```typescript
+queryClient.resetQueries<TTaggedQueryKey>(
+  filters?: QueryFilters<TTaggedQueryKey>,
+  options?: ResetOptions
+): Promise<void>
+```
+
+### removeQueries
+
+Removes queries from the cache.
+
+```typescript
+queryClient.removeQueries<TTaggedQueryKey>(filters?: QueryFilters<TTaggedQueryKey>): void
+```
+
+### isFetching
+
+Returns the number of queries currently fetching.
+
+```typescript
+queryClient.isFetching(filters?: QueryFilters): number
+```
+
+**Example:**
+```typescript
+const fetchingCount = queryClient.isFetching({ queryKey: ['todos'] })
+```
+
+### isMutating
+
+Returns the number of mutations currently pending.
+
+```typescript
+queryClient.isMutating(filters?: MutationFilters): number
+```
+
+### getQueryCache
+
+Gets the QueryCache instance.
+
+```typescript
+queryClient.getQueryCache(): QueryCache
+```
+
+### getMutationCache
+
+Gets the MutationCache instance.
+
+```typescript
+queryClient.getMutationCache(): MutationCache
+```
+
+### getDefaultOptions
+
+Gets the default options for queries and mutations.
+
+```typescript
+queryClient.getDefaultOptions(): DefaultOptions
+```
+
+### setDefaultOptions
+
+Sets the default options for queries and mutations.
+
+```typescript
+queryClient.setDefaultOptions(options: DefaultOptions): void
+```
+
+**Example:**
+```typescript
+queryClient.setDefaultOptions({
+  queries: {
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  },
+})
+```
+
+### setQueryDefaults
+
+Sets default options for specific queries matching a query key.
+
+```typescript
+queryClient.setQueryDefaults<TQueryFnData, TError, TData, TQueryData>(
+  queryKey: QueryKey,
+  options: Partial<QueryObserverOptions<TQueryFnData, TError, TData, TQueryData>>
+): void
+```
+
+**Example:**
+```typescript
+queryClient.setQueryDefaults(['todos'], {
+  staleTime: 1000 * 60 * 10,
+})
+```
+
+### getQueryDefaults
+
+Gets the default options for queries matching a query key.
+
+```typescript
+queryClient.getQueryDefaults(queryKey: QueryKey): Partial<QueryObserverOptions>
+```
+
+### setMutationDefaults
+
+Sets default options for mutations matching a mutation key.
+
+```typescript
+queryClient.setMutationDefaults<TData, TError, TVariables, TOnMutateResult>(
+  mutationKey: MutationKey,
+  options: Partial<MutationObserverOptions<TData, TError, TVariables, TOnMutateResult>>
+): void
+```
+
+### getMutationDefaults
+
+Gets the default options for mutations matching a mutation key.
+
+```typescript
+queryClient.getMutationDefaults(mutationKey: MutationKey): Partial<MutationObserverOptions>
+```
+
+### resumePausedMutations
+
+Resumes paused mutations (typically used when coming back online).
+
+```typescript
+queryClient.resumePausedMutations(): Promise<unknown>
+```
+
+### clear
+
+Clears all queries and mutations from the cache.
+
+```typescript
+queryClient.clear(): void
+```
+
+**Example:**
+```typescript
+queryClient.clear()
+```

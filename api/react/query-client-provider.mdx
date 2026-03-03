@@ -1,0 +1,306 @@
+---
+title: QueryClientProvider
+description: React context provider that supplies the QueryClient to the component tree
+---
+
+The `QueryClientProvider` component is used to provide a `QueryClient` to your application. It must wrap any components that use React Query hooks.
+
+## Import
+
+```tsx
+import { QueryClientProvider } from '@tanstack/react-query'
+```
+
+## Signature
+
+```tsx
+function QueryClientProvider(props: QueryClientProviderProps): JSX.Element
+
+type QueryClientProviderProps = {
+  client: QueryClient
+  children?: React.ReactNode
+}
+```
+
+## Props
+
+### client
+
+- **Type:** `QueryClient`
+- **Required:** Yes
+
+The `QueryClient` instance to provide to your application.
+
+### children
+
+- **Type:** `React.ReactNode`
+- **Optional**
+
+The React components that will have access to the `QueryClient`.
+
+## Behavior
+
+- Creates a React context that provides the `QueryClient` to all child components
+- Automatically calls `client.mount()` when the provider mounts
+- Automatically calls `client.unmount()` when the provider unmounts
+- The `QueryClient` instance remains the same for the lifetime of the provider
+
+## Examples
+
+### Basic Setup
+
+```tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+const queryClient = new QueryClient()
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <YourApp />
+    </QueryClientProvider>
+  )
+}
+```
+
+### With Default Options
+
+```tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60 * 1000, // 1 minute
+      gcTime: 10 * 60 * 1000, // 10 minutes
+      retry: 3,
+      refetchOnWindowFocus: false,
+    },
+    mutations: {
+      retry: 1,
+    },
+  },
+})
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <YourApp />
+    </QueryClientProvider>
+  )
+}
+```
+
+### With React Query DevTools
+
+```tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+
+const queryClient = new QueryClient()
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <YourApp />
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
+  )
+}
+```
+
+### Multiple Providers (Not Recommended)
+
+```tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+const mainQueryClient = new QueryClient()
+const isolatedQueryClient = new QueryClient()
+
+function App() {
+  return (
+    <QueryClientProvider client={mainQueryClient}>
+      <MainApp />
+      
+      {/* Isolated section with its own cache */}
+      <QueryClientProvider client={isolatedQueryClient}>
+        <IsolatedSection />
+      </QueryClientProvider>
+    </QueryClientProvider>
+  )
+}
+```
+
+### With Custom Query Cache
+
+```tsx
+import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query'
+
+const queryCache = new QueryCache({
+  onError: (error) => {
+    console.error('Query error:', error)
+  },
+  onSuccess: (data) => {
+    console.log('Query success:', data)
+  },
+})
+
+const queryClient = new QueryClient({ queryCache })
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <YourApp />
+    </QueryClientProvider>
+  )
+}
+```
+
+### With Mutation Cache
+
+```tsx
+import {
+  QueryClient,
+  QueryClientProvider,
+  MutationCache,
+} from '@tanstack/react-query'
+
+const mutationCache = new MutationCache({
+  onError: (error) => {
+    console.error('Mutation error:', error)
+  },
+  onSuccess: (data) => {
+    console.log('Mutation success:', data)
+  },
+})
+
+const queryClient = new QueryClient({ mutationCache })
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <YourApp />
+    </QueryClientProvider>
+  )
+}
+```
+
+### Creating Client in Component (Not Recommended)
+
+```tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useState } from 'react'
+
+function App() {
+  // Only create the client once per app lifetime
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 60 * 1000,
+          },
+        },
+      }),
+  )
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <YourApp />
+    </QueryClientProvider>
+  )
+}
+```
+
+### Next.js App Router
+
+```tsx
+// app/providers.tsx
+'use client'
+
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useState } from 'react'
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 60 * 1000,
+          },
+        },
+      }),
+  )
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      {children}
+    </QueryClientProvider>
+  )
+}
+
+// app/layout.tsx
+import { Providers } from './providers'
+
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en">
+      <body>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  )
+}
+```
+
+### With Error Boundary
+
+```tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ErrorBoundary } from 'react-error-boundary'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      throwOnError: true, // Throw errors to error boundaries
+    },
+  },
+})
+
+function App() {
+  return (
+    <ErrorBoundary fallback={<div>Something went wrong</div>}>
+      <QueryClientProvider client={queryClient}>
+        <YourApp />
+      </QueryClientProvider>
+    </ErrorBoundary>
+  )
+}
+```
+
+## useQueryClient Hook
+
+To access the `QueryClient` inside components, use the `useQueryClient` hook:
+
+```tsx
+import { useQueryClient } from '@tanstack/react-query'
+
+function MyComponent() {
+  const queryClient = useQueryClient()
+
+  const handleInvalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['todos'] })
+  }
+
+  return <button onClick={handleInvalidate}>Refresh</button>
+}
+```
+
+## Notes
+
+- The `QueryClientProvider` must be placed above any components that use React Query hooks
+- Typically, you should create the `QueryClient` outside of your component to avoid creating a new instance on every render
+- If you must create it inside a component, use `useState` with a lazy initializer
+- The provider automatically manages the lifecycle of the `QueryClient` (mounting and unmounting)
+- You can have multiple providers in your app, but it's generally not recommended unless you need isolated caches

@@ -1,0 +1,220 @@
+---
+title: timeoutManager
+description: API reference for the timeoutManager utility that provides custom timeout implementations
+---
+
+The `timeoutManager` is a singleton utility that provides a customizable interface for timeout and interval operations. It allows you to replace the default `setTimeout`/`setInterval` implementations with custom providers, which is useful for optimizing performance with thousands of timeouts or implementing custom scheduling logic.
+
+## Import
+
+```ts
+import { timeoutManager } from '@tanstack/query-core'
+```
+
+## Methods
+
+### `setTimeoutProvider()`
+
+Sets a custom timeout provider to replace the default global `setTimeout`/`setInterval` functions.
+
+<ParamField path="provider" type="TimeoutProvider<TTimerId>">
+  An object implementing the `TimeoutProvider` interface with `setTimeout`, `clearTimeout`, `setInterval`, and `clearInterval` methods.
+</ParamField>
+
+**Example**
+
+```ts
+import { timeoutManager } from '@tanstack/query-core'
+
+// Example: Custom timeout provider that logs all timeouts
+const loggingProvider = {
+  setTimeout: (callback, delay) => {
+    console.log(`Setting timeout with delay: ${delay}ms`)
+    return setTimeout(callback, delay)
+  },
+  clearTimeout: (timeoutId) => {
+    console.log(`Clearing timeout: ${timeoutId}`)
+    clearTimeout(timeoutId)
+  },
+  setInterval: (callback, delay) => {
+    console.log(`Setting interval with delay: ${delay}ms`)
+    return setInterval(callback, delay)
+  },
+  clearInterval: (intervalId) => {
+    console.log(`Clearing interval: ${intervalId}`)
+    clearInterval(intervalId)
+  },
+}
+
+timeoutManager.setTimeoutProvider(loggingProvider)
+```
+
+<Warning>
+  Switching providers after timeouts have been created can result in unexpected behavior. Timeouts created with the previous provider may not be properly cleared. Set the provider early in your application lifecycle, before any queries are created.
+</Warning>
+
+### `setTimeout()`
+
+Creates a timeout using the configured provider.
+
+<ParamField path="callback" type="() => void">
+  The function to execute after the delay.
+</ParamField>
+
+<ParamField path="delay" type="number">
+  The delay in milliseconds before executing the callback.
+</ParamField>
+
+**Returns:** `ManagedTimerId` - A timer ID that can be passed to `clearTimeout()`.
+
+**Example**
+
+```ts
+const timerId = timeoutManager.setTimeout(() => {
+  console.log('Timeout executed')
+}, 1000)
+
+// Clear it if needed
+timeoutManager.clearTimeout(timerId)
+```
+
+### `clearTimeout()`
+
+Clears a timeout created with `setTimeout()`.
+
+<ParamField path="timeoutId" type="ManagedTimerId | undefined">
+  The timer ID returned from `setTimeout()`. Can be `undefined`, in which case this is a no-op.
+</ParamField>
+
+**Example**
+
+```ts
+const timerId = timeoutManager.setTimeout(() => {
+  console.log('This will not execute')
+}, 1000)
+
+timeoutManager.clearTimeout(timerId)
+```
+
+### `setInterval()`
+
+Creates an interval using the configured provider.
+
+<ParamField path="callback" type="() => void">
+  The function to execute repeatedly at the specified interval.
+</ParamField>
+
+<ParamField path="delay" type="number">
+  The delay in milliseconds between each execution of the callback.
+</ParamField>
+
+**Returns:** `ManagedTimerId` - An interval ID that can be passed to `clearInterval()`.
+
+**Example**
+
+```ts
+const intervalId = timeoutManager.setInterval(() => {
+  console.log('Interval executed')
+}, 1000)
+
+// Clear it when done
+timeoutManager.clearInterval(intervalId)
+```
+
+### `clearInterval()`
+
+Clears an interval created with `setInterval()`.
+
+<ParamField path="intervalId" type="ManagedTimerId | undefined">
+  The interval ID returned from `setInterval()`. Can be `undefined`, in which case this is a no-op.
+</ParamField>
+
+**Example**
+
+```ts
+const intervalId = timeoutManager.setInterval(() => {
+  console.log('Repeated execution')
+}, 1000)
+
+// Stop after 5 seconds
+setTimeout(() => {
+  timeoutManager.clearInterval(intervalId)
+}, 5000)
+```
+
+## Types
+
+### `TimeoutProvider`
+
+Interface for custom timeout providers.
+
+```ts
+interface TimeoutProvider<TTimerId extends ManagedTimerId = ManagedTimerId> {
+  readonly setTimeout: (callback: () => void, delay: number) => TTimerId
+  readonly clearTimeout: (timeoutId: TTimerId | undefined) => void
+  readonly setInterval: (callback: () => void, delay: number) => TTimerId
+  readonly clearInterval: (intervalId: TTimerId | undefined) => void
+}
+```
+
+### `ManagedTimerId`
+
+The type for timer IDs returned by timeout/interval methods.
+
+```ts
+type ManagedTimerId = number | { [Symbol.toPrimitive]: () => number }
+```
+
+## Why Use Custom Timeout Providers?
+
+TanStack Query makes extensive use of timeouts to implement `staleTime` and `gcTime`. Applications with thousands of queries can hit scalability issues with the platform's global `setTimeout` implementation.
+
+Custom timeout providers allow you to:
+
+- **Coalesce Timeouts**: Group similar timeouts together to reduce the number of timers on the event loop
+- **Optimize Performance**: Use more efficient timing mechanisms for large-scale applications
+- **Custom Scheduling**: Implement domain-specific scheduling logic
+- **Testing**: Mock timeout behavior in tests
+
+## Example: Coalescing Timeout Provider
+
+```ts
+// Example provider that coalesces timeouts within 100ms intervals
+class CoalescingTimeoutProvider {
+  private buckets = new Map<number, Set<() => void>>()
+  private timers = new Map<number, ReturnType<typeof setTimeout>>()
+
+  setTimeout(callback: () => void, delay: number): number {
+    // Round delay to nearest 100ms bucket
+    const bucket = Math.ceil(delay / 100) * 100
+    
+    if (!this.buckets.has(bucket)) {
+      this.buckets.set(bucket, new Set())
+      const timer = setTimeout(() => {
+        const callbacks = this.buckets.get(bucket)
+        this.buckets.delete(bucket)
+        this.timers.delete(bucket)
+        callbacks?.forEach(cb => cb())
+      }, bucket)
+      this.timers.set(bucket, timer)
+    }
+    
+    this.buckets.get(bucket)!.add(callback)
+    return bucket // Simplified ID
+  }
+
+  clearTimeout(timeoutId: number | undefined): void {
+    // Implementation for clearing specific callbacks
+  }
+
+  setInterval(callback: () => void, delay: number): number {
+    return setInterval(callback, delay) as unknown as number
+  }
+
+  clearInterval(intervalId: number | undefined): void {
+    if (intervalId !== undefined) clearInterval(intervalId)
+  }
+}
+
+timeoutManager.setTimeoutProvider(new CoalescingTimeoutProvider())
+```

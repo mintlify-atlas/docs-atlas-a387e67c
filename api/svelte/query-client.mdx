@@ -1,0 +1,212 @@
+---
+title: QueryClient
+description: Svelte Query's QueryClient for managing query and mutation cache
+---
+
+The `QueryClient` is the core class that manages the query and mutation cache for Svelte Query. It provides the same API as the base QueryClient from `@tanstack/query-core`.
+
+## Import
+
+```svelte
+import { QueryClient } from '@tanstack/svelte-query'
+```
+
+## Constructor
+
+```ts
+const queryClient = new QueryClient(config?: QueryClientConfig)
+```
+
+### Config
+
+<ParamField path="config" type="QueryClientConfig">
+  Configuration object for the QueryClient.
+
+  <Expandable title="properties">
+    <ParamField path="queryCache" type="QueryCache">
+      Custom QueryCache instance. If not provided, a new one will be created.
+    </ParamField>
+
+    <ParamField path="mutationCache" type="MutationCache">
+      Custom MutationCache instance. If not provided, a new one will be created.
+    </ParamField>
+
+    <ParamField path="defaultOptions" type="DefaultOptions">
+      Default options for queries and mutations.
+
+      ```ts
+      defaultOptions: {
+        queries: {
+          staleTime: 60 * 1000,
+          gcTime: 10 * 60 * 1000,
+        },
+        mutations: {
+          retry: 1,
+        },
+      }
+      ```
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Methods
+
+### Query Data Methods
+
+<ResponseField name="getQueryData" type="<TData = unknown>(queryKey: QueryKey) => TData | undefined">
+  Returns the cached data for a query.
+
+  ```ts
+  const data = queryClient.getQueryData(['todos'])
+  ```
+</ResponseField>
+
+<ResponseField name="setQueryData" type="<TData>(queryKey: QueryKey, updater: Updater<TData | undefined, TData | undefined>) => TData | undefined">
+  Updates the cached data for a query.
+
+  ```ts
+  queryClient.setQueryData(['todos'], (old) => [...old, newTodo])
+  ```
+</ResponseField>
+
+<ResponseField name="getQueriesData" type="<TData = unknown>(filters: QueryFilters) => Array<[QueryKey, TData | undefined]>">
+  Returns cached data for multiple queries matching the filters.
+</ResponseField>
+
+<ResponseField name="setQueriesData" type="<TData>(filters: QueryFilters, updater: Updater<TData | undefined, TData | undefined>) => Array<[QueryKey, TData | undefined]>">
+  Updates cached data for multiple queries matching the filters.
+</ResponseField>
+
+### Invalidation Methods
+
+<ResponseField name="invalidateQueries" type="(filters?: InvalidateQueryFilters, options?: InvalidateOptions) => Promise<void>">
+  Invalidates queries and triggers refetches.
+
+  ```ts
+  await queryClient.invalidateQueries({ queryKey: ['todos'] })
+  ```
+</ResponseField>
+
+<ResponseField name="refetchQueries" type="(filters?: RefetchQueryFilters, options?: RefetchOptions) => Promise<void>">
+  Refetches queries matching the filters.
+</ResponseField>
+
+<ResponseField name="resetQueries" type="(filters?: QueryFilters, options?: ResetOptions) => Promise<void>">
+  Resets queries to their initial state.
+</ResponseField>
+
+<ResponseField name="removeQueries" type="(filters?: QueryFilters) => void">
+  Removes queries from the cache.
+</ResponseField>
+
+<ResponseField name="cancelQueries" type="(filters?: QueryFilters, options?: CancelOptions) => Promise<void>">
+  Cancels ongoing queries.
+</ResponseField>
+
+### Fetch Methods
+
+<ResponseField name="fetchQuery" type="<TData>(options: FetchQueryOptions) => Promise<TData>">
+  Fetches a query and returns the data.
+
+  ```ts
+  const data = await queryClient.fetchQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+  })
+  ```
+</ResponseField>
+
+<ResponseField name="prefetchQuery" type="(options: FetchQueryOptions) => Promise<void>">
+  Prefetches a query and stores it in the cache.
+</ResponseField>
+
+<ResponseField name="fetchInfiniteQuery" type="<TData>(options: FetchInfiniteQueryOptions) => Promise<InfiniteData<TData>>">
+  Fetches an infinite query.
+</ResponseField>
+
+<ResponseField name="prefetchInfiniteQuery" type="(options: FetchInfiniteQueryOptions) => Promise<void>">
+  Prefetches an infinite query.
+</ResponseField>
+
+### Query Status Methods
+
+<ResponseField name="isFetching" type="(filters?: QueryFilters) => number">
+  Returns the number of queries currently fetching.
+
+  ```ts
+  const count = queryClient.isFetching()
+  const todosCount = queryClient.isFetching({ queryKey: ['todos'] })
+  ```
+</ResponseField>
+
+<ResponseField name="isMutating" type="(filters?: MutationFilters) => number">
+  Returns the number of mutations currently pending.
+</ResponseField>
+
+## Example
+
+```svelte
+<script lang="ts">
+  import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query'
+
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+      },
+    },
+  })
+</script>
+
+<QueryClientProvider client={queryClient}>
+  <!-- Your app -->
+</QueryClientProvider>
+```
+
+## Prefetching
+
+```svelte
+<script lang="ts">
+  import { useQueryClient } from '@tanstack/svelte-query'
+
+  const queryClient = useQueryClient()
+
+  async function prefetchTodo(id: number) {
+    await queryClient.prefetchQuery({
+      queryKey: ['todo', id],
+      queryFn: () => fetchTodo(id),
+    })
+  }
+
+  function handleMouseEnter(id: number) {
+    prefetchTodo(id)
+  }
+</script>
+
+<button onmouseenter={() => handleMouseEnter(1)}>
+  Todo 1
+</button>
+```
+
+## Manual Cache Updates
+
+```svelte
+<script lang="ts">
+  import { useQueryClient } from '@tanstack/svelte-query'
+
+  const queryClient = useQueryClient()
+
+  function addTodoOptimistically(newTodo: Todo) {
+    queryClient.setQueryData(['todos'], (old) => {
+      return [...(old ?? []), newTodo]
+    })
+  }
+
+  function removeTodoFromCache(todoId: number) {
+    queryClient.setQueryData(['todos'], (old) => {
+      return old?.filter(todo => todo.id !== todoId)
+    })
+  }
+</script>
+```

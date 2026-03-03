@@ -1,0 +1,341 @@
+---
+title: Query Cancellation
+description: Learn how to cancel queries using AbortController and handle cancellation gracefully
+---
+
+## Overview
+
+TanStack Query provides built-in support for query cancellation using the native `AbortController` API. When a query becomes inactive or is manually cancelled, you can abort ongoing network requests to save bandwidth and improve performance.
+
+## Automatic Query Cancellation
+
+Queries are automatically cancelled in these scenarios:
+
+- When a component unmounts and no other components are using the query
+- When a new query is triggered before the previous one completes (if `cancelRefetch` is true)
+- When `queryClient.cancelQueries()` is called
+
+## Using AbortSignal
+
+The query function receives an `AbortSignal` through its context that you can pass to fetch or Axios:
+
+### With Fetch API
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function usePosts() {
+  return useQuery({
+    queryKey: ['posts'],
+    queryFn: async ({ signal }) => {
+      const response = await fetch('/api/posts', { signal })
+      return response.json()
+    },
+  })
+}
+```
+
+### With Axios
+
+```tsx
+import axios from 'axios'
+
+function usePost(id: number) {
+  return useQuery({
+    queryKey: ['post', id],
+    queryFn: async ({ signal, queryKey }) => {
+      const [, postId] = queryKey
+      const { data } = await axios.get(`/api/posts/${postId}`, { signal })
+      return data
+    },
+  })
+}
+```
+
+## How AbortSignal Works Internally
+
+TanStack Query creates an `AbortController` for each query fetch and tracks whether the signal was consumed:
+
+```tsx
+// From query.ts (simplified)
+const abortController = new AbortController()
+
+// The signal is added as an enumerable property
+const addSignalProperty = (object: unknown) => {
+  Object.defineProperty(object, 'signal', {
+    enumerable: true,
+    get: () => {
+      this.#abortSignalConsumed = true
+      return abortController.signal
+    },
+  })
+}
+
+const queryFnContext = {
+  client: this.#client,
+  queryKey: this.queryKey,
+  meta: this.meta,
+}
+addSignalProperty(queryFnContext)
+```
+
+This tracking determines cancellation behavior:
+
+- **If signal is consumed**: Query is cancelled with `revert: true` when all observers are removed
+- **If signal is not consumed**: Only retry is cancelled, allowing the request to complete in the background
+
+## Manual Cancellation
+
+You can manually cancel queries using the QueryClient:
+
+### Cancel Specific Query
+
+```tsx
+import { useQueryClient } from '@tanstack/react-query'
+
+function CancelButton() {
+  const queryClient = useQueryClient()
+
+  const handleCancel = () => {
+    // Cancel a specific query
+    queryClient.cancelQueries({ queryKey: ['posts'] })
+  }
+
+  return <button onClick={handleCancel}>Cancel</button>
+}
+```
+
+### Cancel Multiple Queries
+
+```tsx
+// Cancel all queries
+queryClient.cancelQueries()
+
+// Cancel all queries starting with 'posts'
+queryClient.cancelQueries({ queryKey: ['posts'] })
+
+// Cancel queries matching a predicate
+queryClient.cancelQueries({
+  predicate: (query) => query.state.status === 'pending',
+})
+```
+
+## Cancellation Options
+
+The `cancel` method accepts options:
+
+```tsx
+query.cancel({ 
+  silent: true,  // Don't throw CancelledError
+  revert: true,  // Revert to previous state
+})
+```
+
+### Silent Cancellation
+
+Silent cancellation doesn't throw an error and starts a new fetch:
+
+```tsx
+// From query.ts
+if (this.state.data !== undefined && fetchOptions?.cancelRefetch) {
+  // Silently cancel current fetch if the user wants to cancel refetch
+  this.cancel({ silent: true })
+}
+```
+
+### Revert Cancellation
+
+Revert cancellation restores the query to its previous state:
+
+```tsx
+// When observer is removed and signal was consumed
+if (this.#abortSignalConsumed) {
+  this.#retryer.cancel({ revert: true })
+}
+```
+
+## CancelledError
+
+When a query is cancelled, a `CancelledError` is thrown:
+
+```tsx
+import { CancelledError } from '@tanstack/query-core'
+
+try {
+  const data = await query.fetch()
+} catch (error) {
+  if (error instanceof CancelledError) {
+    if (error.silent) {
+      // Silent cancellation - new fetch starting
+    } else if (error.revert) {
+      // Revert to previous state
+    }
+  }
+}
+```
+
+## Optimistic Updates with Cancellation
+
+When performing optimistic updates, cancel in-flight queries to prevent them from overwriting your optimistic data:
+
+```tsx
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+
+function useUpdatePost() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: updatePost,
+    onMutate: async (newPost) => {
+      // Cancel outgoing refetches to prevent overwriting optimistic update
+      await queryClient.cancelQueries({ queryKey: ['posts', newPost.id] })
+
+      // Snapshot the previous value
+      const previousPost = queryClient.getQueryData(['posts', newPost.id])
+
+      // Optimistically update
+      queryClient.setQueryData(['posts', newPost.id], newPost)
+
+      // Return context with snapshot
+      return { previousPost }
+    },
+    onError: (err, newPost, context) => {
+      // Rollback on error
+      queryClient.setQueryData(
+        ['posts', newPost.id],
+        context?.previousPost
+      )
+    },
+    onSettled: (data, error, variables) => {
+      // Refetch after mutation
+      queryClient.invalidateQueries({ queryKey: ['posts', variables.id] })
+    },
+  })
+}
+```
+
+## Custom Cancellation Logic
+
+For libraries that don't support AbortSignal, implement custom cancellation:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function useCustomQuery() {
+  return useQuery({
+    queryKey: ['custom'],
+    queryFn: async ({ signal }) => {
+      // Create a custom cancellable promise
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          resolve('data')
+        }, 5000)
+
+        // Listen for abort signal
+        signal?.addEventListener('abort', () => {
+          clearTimeout(timeout)
+          reject(new Error('Cancelled'))
+        })
+      })
+    },
+  })
+}
+```
+
+## Cancellation with GraphQL
+
+For GraphQL clients that support AbortSignal:
+
+```tsx
+import { request } from 'graphql-request'
+import { useQuery } from '@tanstack/react-query'
+
+function useGraphQLQuery() {
+  return useQuery({
+    queryKey: ['posts'],
+    queryFn: async ({ signal }) => {
+      return await request({
+        url: '/graphql',
+        document: gql`
+          query {
+            posts {
+              id
+              title
+            }
+          }
+        `,
+        signal,
+      })
+    },
+  })
+}
+```
+
+## Infinite Query Cancellation
+
+Infinite queries also support cancellation:
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/react-query'
+
+function useInfinitePosts() {
+  return useInfiniteQuery({
+    queryKey: ['posts'],
+    queryFn: async ({ pageParam, signal }) => {
+      const response = await fetch(
+        `/api/posts?cursor=${pageParam}`,
+        { signal }
+      )
+      return response.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+}
+```
+
+## Best Practices
+
+1. **Always use the signal** - Pass the `signal` to your HTTP client for proper cancellation
+2. **Cancel before optimistic updates** - Prevent race conditions by cancelling in-flight requests
+3. **Handle CancelledError** - Don't treat cancellation as a regular error
+4. **Test cancellation** - Ensure your queries can be safely cancelled
+5. **Use silent cancellation** - When replacing queries with fresh data
+6. **Implement cleanup** - Clear timeouts and listeners when requests are cancelled
+
+## Common Patterns
+
+### Debounced Search with Cancellation
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useDebouncedValue } from './hooks'
+
+function SearchPosts() {
+  const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search, 300)
+
+  const { data, isFetching } = useQuery({
+    queryKey: ['posts', 'search', debouncedSearch],
+    queryFn: async ({ signal }) => {
+      const response = await fetch(
+        `/api/posts/search?q=${debouncedSearch}`,
+        { signal }
+      )
+      return response.json()
+    },
+    enabled: debouncedSearch.length > 0,
+  })
+
+  return (
+    <div>
+      <input value={search} onChange={(e) => setSearch(e.target.value)} />
+      {isFetching && <span>Searching...</span>}
+      {/* render results */}
+    </div>
+  )
+}
+```
+
+Each new search automatically cancels the previous request when the query key changes.

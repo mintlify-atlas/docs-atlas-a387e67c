@@ -1,0 +1,492 @@
+---
+title: Migrating to v3
+description: Guide to migrating from React Query v2 to v3 with breaking changes and new features
+---
+
+React Query v3 brought major improvements to scalability, testing, SSR support, and overall developer experience. This guide will help you migrate from v2 to v3.
+
+## Overview of Changes
+
+v3 introduced:
+
+- More scalable and testable cache configuration
+- Better SSR support
+- Bi-directional infinite queries
+- Query data selectors
+- Configurable defaults for queries and mutations
+- Granular rendering optimization
+- `useQueries` hook for variable-length parallel queries
+- Query filter support for `useIsFetching()`
+- Retry/offline/replay support for mutations
+- Observable queries/mutations outside React
+- Framework-agnostic core logic
+- Bundled devtools
+- Cache persistence (experimental)
+
+## Breaking Changes
+
+### `QueryCache` Split into `QueryClient` and Cache Classes
+
+v3 separates concerns between the client API and cache storage.
+
+```tsx
+// ❌ v2
+import { QueryCache } from 'react-query'
+
+const queryCache = new QueryCache()
+
+// ✅ v3
+import { QueryClient } from 'react-query'
+
+const queryClient = new QueryClient()
+```
+
+**Benefits:**
+- Separation of client API from cache implementation
+- Multiple clients can use the same cache
+- Better for testing and SSR
+- More focused API surface
+
+**Creating with custom caches:**
+
+```tsx
+import { QueryClient, QueryCache, MutationCache } from 'react-query'
+
+const queryClient = new QueryClient({
+  queryCache: new QueryCache(),
+  mutationCache: new MutationCache(),
+})
+```
+
+### New Provider Component
+
+`ReactQueryConfigProvider` and `ReactQueryCacheProvider` are replaced by `QueryClientProvider`.
+
+```tsx
+// ❌ v2
+import { ReactQueryCacheProvider, QueryCache } from 'react-query'
+
+const queryCache = new QueryCache()
+
+function App() {
+  return (
+    <ReactQueryCacheProvider queryCache={queryCache}>
+      {/* app */}
+    </ReactQueryCacheProvider>
+  )
+}
+
+// ✅ v3
+import { QueryClientProvider, QueryClient } from 'react-query'
+
+const queryClient = new QueryClient()
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      {/* app */}
+    </QueryClientProvider>
+  )
+}
+```
+
+### Default Options Configuration
+
+```tsx
+// ❌ v2
+const queryCache = new QueryCache({
+  defaultConfig: {
+    queries: { staleTime: 5000 },
+  },
+})
+
+// ✅ v3
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 5000 },
+    mutations: { retry: 3 },
+  },
+})
+```
+
+Note: `defaultConfig` → `defaultOptions`
+
+### No Default `QueryCache`
+
+You must create your own `QueryClient` or `QueryCache`.
+
+```tsx
+// ❌ v2 - default cache existed
+import { useQuery } from 'react-query'
+
+function Component() {
+  const query = useQuery('todos', fetchTodos)
+}
+
+// ✅ v3 - must provide client
+import { QueryClient, QueryClientProvider, useQuery } from 'react-query'
+
+const queryClient = new QueryClient()
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Component />
+    </QueryClientProvider>
+  )
+}
+```
+
+### `makeQueryCache` Removed
+
+Use `new QueryClient()` or `new QueryCache()` instead.
+
+### `prefetchQuery` Moved and Changed
+
+```tsx
+// ❌ v2
+await queryCache.prefetchQuery('todos', fetchTodos)
+const data = await queryCache.prefetchQuery('todos', fetchTodos)
+
+// ✅ v3
+// prefetchQuery doesn't return data
+await queryClient.prefetchQuery('todos', fetchTodos)
+
+// Use fetchQuery to get data
+const data = await queryClient.fetchQuery('todos', fetchTodos)
+```
+
+### Error Boundary Reset Changes
+
+```tsx
+// ❌ v2
+import { ReactQueryErrorResetBoundary } from 'react-query'
+
+queryCache.resetErrorBoundaries()
+
+// ✅ v3
+import { QueryErrorResetBoundary, useQueryErrorResetBoundary } from 'react-query'
+
+<QueryErrorResetBoundary>
+  {({ reset }) => (
+    <ErrorBoundary onReset={reset}>
+      <Component />
+    </ErrorBoundary>
+  )}
+</QueryErrorResetBoundary>
+
+// Or use the hook
+function Component() {
+  const { reset } = useQueryErrorResetBoundary()
+  // ...
+}
+```
+
+### Cache Methods Renamed
+
+```tsx
+// ❌ v2
+queryCache.getQuery(key)
+queryCache.getQueries(key)
+
+// ✅ v3
+queryCache.find(key)
+queryCache.findAll(key)
+```
+
+### `isFetching` is Now a Method
+
+```tsx
+// ❌ v2
+const count = queryCache.isFetching
+
+// ✅ v3
+const count = queryClient.isFetching()
+```
+
+### Hook Renamed
+
+```tsx
+// ❌ v2
+import { useQueryCache } from 'react-query'
+
+const queryCache = useQueryCache()
+
+// ✅ v3
+import { useQueryClient } from 'react-query'
+
+const queryClient = useQueryClient()
+```
+
+### Query Function Parameters Changed
+
+Query key parts are no longer spread as parameters.
+
+```tsx
+// ❌ v2
+useQuery(['post', id], (_key, id) => fetchPost(id))
+
+// ✅ v3 - Use inline function
+useQuery(['post', id], () => fetchPost(id))
+
+// Or use context
+useQuery(['post', id], (context) => fetchPost(context.queryKey[1]))
+```
+
+### Infinite Query `pageParam` Changes
+
+```tsx
+// ❌ v2
+useInfiniteQuery(['posts'], (_key, pageParam = 0) => fetchPosts(pageParam))
+
+// ✅ v3
+useInfiniteQuery(['posts'], ({ pageParam = 0 }) => fetchPosts(pageParam))
+```
+
+### `usePaginatedQuery` Removed
+
+Use `keepPreviousData` option instead.
+
+```tsx
+// ❌ v2
+import { usePaginatedQuery } from 'react-query'
+
+function Component({ page }) {
+  const { data } = usePaginatedQuery(['page', page], () => fetchPage(page))
+}
+
+// ✅ v3
+import { useQuery } from 'react-query'
+
+function Component({ page }) {
+  const { data } = useQuery(
+    ['page', page],
+    () => fetchPage(page),
+    { keepPreviousData: true }
+  )
+}
+```
+
+### Bi-Directional Infinite Queries
+
+Infinite queries now support both directions.
+
+```tsx
+// v2: One direction only
+const {
+  data,
+  fetchMore,
+  canFetchMore,
+  isFetchingMore,
+} = useInfiniteQuery('projects', fetchProjects, {
+  getFetchMore: (lastPage) => lastPage.nextCursor,
+})
+
+// v3: Both directions
+const {
+  data,
+  fetchNextPage,
+  fetchPreviousPage,
+  hasNextPage,
+  hasPreviousPage,
+  isFetchingNextPage,
+  isFetchingPreviousPage,
+} = useInfiniteQuery('projects', fetchProjects, {
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+  getPreviousPageParam: (firstPage) => firstPage.prevCursor,
+})
+```
+
+**Property name changes:**
+- `getFetchMore` → `getNextPageParam`
+- `canFetchMore` → `hasNextPage`
+- `fetchMore` → `fetchNextPage`
+- `isFetchingMore` → `isFetchingNextPage`
+
+**New properties:**
+- `getPreviousPageParam`
+- `hasPreviousPage`
+- `fetchPreviousPage`
+- `isFetchingPreviousPage`
+
+### Infinite Query Data Structure
+
+Data now includes `pages` and `pageParams`.
+
+```tsx
+// v2: data was just the array of pages
+data: [page1, page2, page3]
+
+// v3: data is an object
+data: {
+  pages: [page1, page2, page3],
+  pageParams: [param1, param2, param3],
+}
+
+// Manipulate pages and params together
+queryClient.setQueryData(['projects'], (data) => ({
+  pages: data.pages.slice(1),
+  pageParams: data.pageParams.slice(1),
+}))
+```
+
+### `useMutation` Returns Object
+
+```tsx
+// ❌ v2
+const [mutate, { status, reset }] = useMutation(addTodo)
+
+// ✅ v3
+const { mutate, status, reset } = useMutation(addTodo)
+```
+
+### `mutate` No Longer Returns Promise
+
+Separate `mutate` and `mutateAsync` functions.
+
+```tsx
+// ❌ v2
+const [mutate] = useMutation(addTodo)
+
+const data = await mutate(newTodo)
+
+// ✅ v3 - Use mutateAsync for promises
+const { mutateAsync } = useMutation(addTodo)
+
+try {
+  const data = await mutateAsync(newTodo)
+} catch (error) {
+  // handle error
+}
+
+// Or use callbacks with mutate
+const { mutate } = useMutation(addTodo)
+
+mutate(newTodo, {
+  onSuccess: (data) => console.log(data),
+  onError: (error) => console.error(error),
+})
+```
+
+### Query Options Syntax Changed
+
+```tsx
+// ❌ v2
+useQuery({
+  queryKey: 'todos',
+  queryFn: fetchTodos,
+  config: { staleTime: 5000 },
+})
+
+// ✅ v3 - Flattened structure
+useQuery({
+  queryKey: 'todos',
+  queryFn: fetchTodos,
+  staleTime: 5000,
+})
+```
+
+## New Features
+
+### Query Data Selectors
+
+Transform or select parts of query data.
+
+```tsx
+const { data } = useQuery(['todos'], fetchTodos, {
+  select: (todos) => todos.filter((todo) => !todo.completed),
+})
+// data only contains incomplete todos
+```
+
+### `useQueries` Hook
+
+Dynamic parallel query execution.
+
+```tsx
+const results = useQueries([
+  { queryKey: ['user', 1], queryFn: () => fetchUser(1) },
+  { queryKey: ['user', 2], queryFn: () => fetchUser(2) },
+  { queryKey: ['user', 3], queryFn: () => fetchUser(3) },
+])
+```
+
+### Query Filters for `useIsFetching`
+
+```tsx
+// Count all fetching queries
+const fetchingCount = useIsFetching()
+
+// Count fetching queries matching a filter
+const todosFetchingCount = useIsFetching(['todos'])
+```
+
+### Mutation Retry Support
+
+```tsx
+const mutation = useMutation(addTodo, {
+  retry: 3,
+  retryDelay: 1000,
+})
+```
+
+### Persistent Queries
+
+Persist cache to localStorage (experimental in v3).
+
+```tsx
+import { persistQueryClient } from 'react-query/persistQueryClient-experimental'
+import { createWebStoragePersistor } from 'react-query/createWebStoragePersistor-experimental'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { cacheTime: 1000 * 60 * 60 * 24 },
+  },
+})
+
+const persister = createWebStoragePersistor({
+  storage: window.localStorage,
+})
+
+persistQueryClient({ queryClient, persister })
+```
+
+## Migration Steps
+
+1. **Update React Query**
+   ```bash
+   npm install react-query@^3
+   ```
+
+2. **Replace QueryCache with QueryClient**
+   - Change `new QueryCache()` to `new QueryClient()`
+   - Update `defaultConfig` to `defaultOptions`
+
+3. **Update Provider**
+   - Replace `ReactQueryCacheProvider` with `QueryClientProvider`
+   - Pass `client` prop instead of `queryCache`
+
+4. **Update hooks**
+   - Change `useQueryCache()` to `useQueryClient()`
+   - Update `usePaginatedQuery` to `useQuery` with `keepPreviousData: true`
+
+5. **Update infinite queries**
+   - Rename `getFetchMore` to `getNextPageParam`
+   - Update property names for fetching more
+   - Adjust for new data structure
+
+6. **Update mutations**
+   - Destructure return value as object
+   - Use `mutateAsync` for promise-based flows
+
+7. **Update query function signatures**
+   - Remove spread parameters
+   - Use inline functions or context
+
+8. **Test thoroughly**
+
+## Resources
+
+- [v3 Announcement](https://tanstack.com/blog/react-query-3)
+- [Query Selectors](https://tanstack.com/query/latest/docs/framework/react/guides/migrating-to-react-query-4#select)
+- [Infinite Queries](https://tanstack.com/query/latest/docs/framework/react/guides/infinite-queries)

@@ -1,0 +1,288 @@
+---
+title: useQueries
+description: React hook for fetching multiple queries in parallel with type-safe results
+---
+
+The `useQueries` hook allows you to fetch multiple queries in parallel. It's useful when you need to execute a variable number of queries.
+
+## Import
+
+```tsx
+import { useQueries } from '@tanstack/react-query'
+```
+
+## Signature
+
+```tsx
+function useQueries<
+  T extends Array<any>,
+  TCombinedResult = QueriesResults<T>,
+>(options: {
+  queries: readonly [...QueriesOptions<T>]
+  combine?: (result: QueriesResults<T>) => TCombinedResult
+}): TCombinedResult
+```
+
+## Parameters
+
+### options
+
+Type: `{ queries: QueriesOptions<T>, combine?: (result: QueriesResults<T>) => TCombinedResult }`
+
+#### queries
+
+- **Type:** `readonly [...QueriesOptions<T>]`
+- **Required:** Yes
+
+An array of query option objects. Each object accepts the same options as `useQuery`.
+
+```tsx
+queries: [
+  { queryKey: ['post', 1], queryFn: () => fetchPost(1) },
+  { queryKey: ['post', 2], queryFn: () => fetchPost(2) },
+]
+```
+
+#### combine
+
+- **Type:** `(result: QueriesResults<T>) => TCombinedResult`
+- **Optional**
+
+A function to combine the results from all queries into a single value.
+
+```tsx
+combine: (results) => ({
+  data: results.map((result) => result.data),
+  pending: results.some((result) => result.isPending),
+})
+```
+
+## Returns
+
+Type: `TCombinedResult` (defaults to `QueriesResults<T>`)
+
+By default, returns an array of query results in the same order as the input queries. Each result has the same shape as `UseQueryResult`.
+
+If a `combine` function is provided, returns the combined result.
+
+## Examples
+
+### Basic Usage
+
+```tsx
+import { useQueries } from '@tanstack/react-query'
+
+function Posts({ postIds }: { postIds: number[] }) {
+  const results = useQueries({
+    queries: postIds.map((id) => ({
+      queryKey: ['post', id],
+      queryFn: () => fetchPost(id),
+      staleTime: Infinity,
+    })),
+  })
+
+  return (
+    <div>
+      {results.map((result, i) => (
+        <div key={i}>
+          {result.isPending ? (
+            'Loading...'
+          ) : result.isError ? (
+            <span>Error: {result.error.message}</span>
+          ) : (
+            <div>{result.data.title}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+### Type-Safe Queries
+
+```tsx
+type Post = { id: number; title: string }
+type User = { id: number; name: string }
+
+function Dashboard() {
+  const results = useQueries({
+    queries: [
+      {
+        queryKey: ['post', 1],
+        queryFn: async (): Promise<Post> => {
+          const res = await fetch('/api/posts/1')
+          return res.json()
+        },
+      },
+      {
+        queryKey: ['user', 1],
+        queryFn: async (): Promise<User> => {
+          const res = await fetch('/api/users/1')
+          return res.json()
+        },
+      },
+    ],
+  })
+
+  // results[0].data is typed as Post | undefined
+  // results[1].data is typed as User | undefined
+
+  const [postResult, userResult] = results
+
+  return (
+    <div>
+      <div>Post: {postResult.data?.title}</div>
+      <div>User: {userResult.data?.name}</div>
+    </div>
+  )
+}
+```
+
+### Using Combine
+
+```tsx
+function Posts({ postIds }: { postIds: number[] }) {
+  const { data, isPending } = useQueries({
+    queries: postIds.map((id) => ({
+      queryKey: ['post', id],
+      queryFn: () => fetchPost(id),
+    })),
+    combine: (results) => ({
+      data: results.map((result) => result.data),
+      isPending: results.some((result) => result.isPending),
+    }),
+  })
+
+  if (isPending) return <div>Loading...</div>
+
+  return (
+    <div>
+      {data.map((post, i) => (
+        <div key={i}>{post?.title}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+### Combine for Aggregate State
+
+```tsx
+function Overview({ userIds }: { userIds: number[] }) {
+  const { allSuccess, hasError } = useQueries({
+    queries: userIds.map((id) => ({
+      queryKey: ['user', id],
+      queryFn: () => fetchUser(id),
+    })),
+    combine: (results) => ({
+      allSuccess: results.every((result) => result.isSuccess),
+      hasError: results.some((result) => result.isError),
+    }),
+  })
+
+  if (hasError) return <div>Some queries failed</div>
+  if (!allSuccess) return <div>Loading...</div>
+
+  return <div>All queries succeeded!</div>
+}
+```
+
+### Dynamic Queries
+
+```tsx
+function DynamicQueries({ filters }: { filters: string[] }) {
+  const results = useQueries({
+    queries: filters.map((filter) => ({
+      queryKey: ['items', filter],
+      queryFn: () => fetchItems(filter),
+      enabled: filter.length > 0,
+    })),
+  })
+
+  // Number of queries will change as filters change
+}
+```
+
+### With Select
+
+```tsx
+function UserNames({ userIds }: { userIds: number[] }) {
+  const results = useQueries({
+    queries: userIds.map((id) => ({
+      queryKey: ['user', id],
+      queryFn: () => fetchUser(id),
+      select: (user) => user.name,
+    })),
+  })
+
+  return (
+    <ul>
+      {results.map((result, i) => (
+        <li key={i}>{result.data}</li> // result.data is string | undefined
+      ))}
+    </ul>
+  )
+}
+```
+
+### Parallel Queries with Different Types
+
+```tsx
+function Dashboard() {
+  const [
+    postsResult,
+    usersResult,
+    settingsResult,
+  ] = useQueries({
+    queries: [
+      {
+        queryKey: ['posts'],
+        queryFn: fetchPosts,
+      },
+      {
+        queryKey: ['users'],
+        queryFn: fetchUsers,
+      },
+      {
+        queryKey: ['settings'],
+        queryFn: fetchSettings,
+      },
+    ],
+  })
+
+  return (
+    <div>
+      <Posts data={postsResult.data} />
+      <Users data={usersResult.data} />
+      <Settings data={settingsResult.data} />
+    </div>
+  )
+}
+```
+
+### Conditional Queries
+
+```tsx
+function UserPosts({ userId, includeComments }: Props) {
+  const results = useQueries({
+    queries: [
+      {
+        queryKey: ['user', userId],
+        queryFn: () => fetchUser(userId),
+      },
+      {
+        queryKey: ['posts', userId],
+        queryFn: () => fetchPosts(userId),
+      },
+      {
+        queryKey: ['comments', userId],
+        queryFn: () => fetchComments(userId),
+        enabled: includeComments,
+      },
+    ],
+  })
+
+  // Comments query only runs if includeComments is true
+}
+```

@@ -1,0 +1,288 @@
+---
+title: Hydration
+description: API reference for hydrate() and dehydrate() functions for server-side rendering
+---
+
+The hydration utilities allow you to serialize query and mutation state on the server and restore it on the client. This is essential for Server-Side Rendering (SSR) and Static Site Generation (SSG) to ensure seamless hydration without data mismatches.
+
+## Import
+
+```ts
+import { dehydrate, hydrate } from '@tanstack/query-core'
+```
+
+## Functions
+
+### `dehydrate()`
+
+Serializes the current state of queries and mutations from a `QueryClient` into a plain object that can be sent to the client.
+
+<ParamField path="client" type="QueryClient" required>
+  The `QueryClient` instance to dehydrate.
+</ParamField>
+
+<ParamField path="options" type="DehydrateOptions">
+  Optional configuration for the dehydration process.
+</ParamField>
+
+**Returns:** `DehydratedState` - A serializable object containing the dehydrated queries and mutations.
+
+**Example**
+
+```ts
+import { QueryClient, dehydrate } from '@tanstack/query-core'
+
+const queryClient = new QueryClient()
+
+// Prefetch some data on the server
+await queryClient.prefetchQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+})
+
+// Dehydrate the state
+const dehydratedState = dehydrate(queryClient)
+
+// Send to client (e.g., in HTML payload)
+const html = `
+  <script>
+    window.__REACT_QUERY_STATE__ = ${JSON.stringify(dehydratedState)}
+  </script>
+`
+```
+
+### `hydrate()`
+
+Restores dehydrated state back into a `QueryClient` on the client side.
+
+<ParamField path="client" type="QueryClient" required>
+  The `QueryClient` instance to hydrate.
+</ParamField>
+
+<ParamField path="dehydratedState" type="unknown" required>
+  The dehydrated state object (typically from the server). If not a valid object, this function returns early without error.
+</ParamField>
+
+<ParamField path="options" type="HydrateOptions">
+  Optional configuration for the hydration process.
+</ParamField>
+
+**Example**
+
+```ts
+import { QueryClient, hydrate } from '@tanstack/query-core'
+
+const queryClient = new QueryClient()
+
+// Hydrate from server state
+const dehydratedState = window.__REACT_QUERY_STATE__
+hydrate(queryClient, dehydratedState)
+
+// Now the client has the server data available immediately
+```
+
+## Options
+
+### `DehydrateOptions`
+
+Configuration options for the `dehydrate()` function.
+
+<ParamField path="shouldDehydrateQuery" type="(query: Query) => boolean">
+  A function to determine if a specific query should be included in the dehydrated state. Defaults to only including queries with `status === 'success'`.
+</ParamField>
+
+<ParamField path="shouldDehydrateMutation" type="(mutation: Mutation) => boolean">
+  A function to determine if a specific mutation should be included in the dehydrated state. Defaults to only including paused mutations.
+</ParamField>
+
+<ParamField path="serializeData" type="(data: any) => any">
+  A function to transform/serialize data during dehydration. Useful for handling non-JSON-serializable data like Dates or custom objects.
+</ParamField>
+
+<ParamField path="shouldRedactErrors" type="(error: unknown) => boolean">
+  A function to determine if errors should be redacted from pending queries. Defaults to `true` (all errors are redacted). In development, original errors are logged before redaction.
+</ParamField>
+
+**Example**
+
+```ts
+const dehydratedState = dehydrate(queryClient, {
+  // Only dehydrate queries that are less than 1 hour old
+  shouldDehydrateQuery: (query) => {
+    const maxAge = 60 * 60 * 1000 // 1 hour
+    return query.state.dataUpdatedAt > Date.now() - maxAge
+  },
+  // Serialize dates as ISO strings
+  serializeData: (data) => {
+    if (data instanceof Date) {
+      return { __type: 'Date', value: data.toISOString() }
+    }
+    return data
+  },
+})
+```
+
+### `HydrateOptions`
+
+Configuration options for the `hydrate()` function.
+
+<ParamField path="defaultOptions" type="object">
+  Default options to apply when hydrating queries and mutations.
+</ParamField>
+
+<ParamField path="defaultOptions.deserializeData" type="(data: any) => any">
+  A function to transform/deserialize data during hydration. Should be the inverse of `serializeData` used during dehydration.
+</ParamField>
+
+<ParamField path="defaultOptions.queries" type="QueryOptions">
+  Default query options to merge with hydrated queries.
+</ParamField>
+
+<ParamField path="defaultOptions.mutations" type="MutationOptions">
+  Default mutation options to merge with hydrated mutations.
+</ParamField>
+
+**Example**
+
+```ts
+hydrate(queryClient, dehydratedState, {
+  defaultOptions: {
+    // Deserialize dates from ISO strings
+    deserializeData: (data) => {
+      if (data?.__type === 'Date') {
+        return new Date(data.value)
+      }
+      return data
+    },
+    queries: {
+      staleTime: 60 * 1000, // 1 minute
+    },
+  },
+})
+```
+
+## Types
+
+### `DehydratedState`
+
+The shape of the dehydrated state object.
+
+```ts
+interface DehydratedState {
+  mutations: Array<DehydratedMutation>
+  queries: Array<DehydratedQuery>
+}
+
+interface DehydratedQuery {
+  queryHash: string
+  queryKey: QueryKey
+  state: QueryState
+  promise?: Promise<unknown>
+  meta?: QueryMeta
+  dehydratedAt?: number
+}
+
+interface DehydratedMutation {
+  mutationKey?: MutationKey
+  state: MutationState
+  meta?: MutationMeta
+  scope?: MutationScope
+}
+```
+
+## Default Behaviors
+
+### Default Dehydration
+
+By default, `dehydrate()` will:
+
+- **Queries**: Only include successful queries (`status === 'success'`)
+- **Mutations**: Only include paused mutations (`state.isPaused === true`)
+- **Data**: Pass through unchanged (identity function)
+- **Errors**: Redact all errors in pending queries for security
+
+### Default Hydration
+
+By default, `hydrate()` will:
+
+- **Data**: Pass through unchanged (identity function)
+- **Fetch Status**: Reset to `'idle'` to avoid stuck fetching states
+- **Status**: Set to `'success'` if data exists, otherwise preserve original status
+- **Existing Queries**: Only update if dehydrated data is newer (`dataUpdatedAt` comparison)
+
+## Advanced: Pending Queries
+
+Dehydrated queries can include pending promises, which allows you to stream data from the server:
+
+```ts
+// Server: Dehydrate includes pending queries
+await queryClient.prefetchQuery({
+  queryKey: ['slow-data'],
+  queryFn: slowFetch, // This might still be pending
+})
+
+const dehydratedState = dehydrate(queryClient)
+
+// Client: Hydrate will restore the pending promise
+hydrate(queryClient, dehydratedState)
+
+// The query will resolve on the client when the promise completes
+```
+
+## Use Cases
+
+- **SSR (Server-Side Rendering)**: Prefetch data on the server and hydrate on the client
+- **SSG (Static Site Generation)**: Generate static pages with prefetched data
+- **Data Transfer**: Send query state between different parts of your application
+- **Serialization**: Handle custom data types like Dates, Maps, or class instances
+- **Selective Hydration**: Only hydrate recent or important queries to reduce payload size
+
+## Example: Complete SSR Setup
+
+```ts
+// server.tsx
+import { QueryClient, dehydrate } from '@tanstack/query-core'
+import { renderToString } from 'react-dom/server'
+
+async function handleRequest(req, res) {
+  const queryClient = new QueryClient()
+
+  // Prefetch data
+  await queryClient.prefetchQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+
+  // Render app
+  const html = renderToString(<App queryClient={queryClient} />)
+
+  // Dehydrate state
+  const dehydratedState = dehydrate(queryClient)
+
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <head><title>My App</title></head>
+      <body>
+        <div id="root">${html}</div>
+        <script>
+          window.__REACT_QUERY_STATE__ = ${JSON.stringify(dehydratedState)}
+        </script>
+        <script src="/client.js"></script>
+      </body>
+    </html>
+  `)
+}
+
+// client.tsx
+import { QueryClient, hydrate } from '@tanstack/query-core'
+import { hydrateRoot } from 'react-dom/client'
+
+const queryClient = new QueryClient()
+
+// Hydrate from server state
+hydrate(queryClient, window.__REACT_QUERY_STATE__)
+
+// Hydrate React app
+hydrateRoot(document.getElementById('root'), <App queryClient={queryClient} />)
+```

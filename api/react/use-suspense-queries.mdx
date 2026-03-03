@@ -1,0 +1,391 @@
+---
+title: useSuspenseQueries
+description: React hook for fetching multiple queries in parallel with React Suspense integration
+---
+
+The `useSuspenseQueries` hook is a version of `useQueries` that integrates with React Suspense. It suspends rendering while any query is loading and ensures all data is always defined.
+
+## Import
+
+```tsx
+import { useSuspenseQueries } from '@tanstack/react-query'
+```
+
+## Signature
+
+```tsx
+function useSuspenseQueries<
+  T extends Array<any>,
+  TCombinedResult = SuspenseQueriesResults<T>,
+>(options: {
+  queries: readonly [...SuspenseQueriesOptions<T>]
+  combine?: (result: SuspenseQueriesResults<T>) => TCombinedResult
+}): TCombinedResult
+```
+
+## Parameters
+
+### options
+
+Type: `{ queries: SuspenseQueriesOptions<T>, combine?: (result: SuspenseQueriesResults<T>) => TCombinedResult }`
+
+#### queries
+
+- **Type:** `readonly [...SuspenseQueriesOptions<T>]`
+- **Required:** Yes
+
+An array of suspense query option objects. Each object accepts the same options as `useSuspenseQuery`.
+
+The following options are NOT allowed:
+- `enabled` - Always `true` for suspense queries
+- `throwOnError` - Always `true` for suspense queries
+- `placeholderData` - Not supported with suspense queries
+
+**Note:** `skipToken` is not allowed with `useSuspenseQueries`.
+
+```tsx
+queries: [
+  { queryKey: ['post', 1], queryFn: () => fetchPost(1) },
+  { queryKey: ['post', 2], queryFn: () => fetchPost(2) },
+]
+```
+
+#### combine
+
+- **Type:** `(result: SuspenseQueriesResults<T>) => TCombinedResult`
+- **Optional**
+
+A function to combine the results from all queries into a single value.
+
+```tsx
+combine: (results) => ({
+  data: results.map((result) => result.data),
+  isRefetching: results.some((result) => result.isRefetching),
+})
+```
+
+## Returns
+
+Type: `TCombinedResult` (defaults to `SuspenseQueriesResults<T>`)
+
+By default, returns an array of suspense query results in the same order as the input queries. Each result has the same shape as `UseSuspenseQueryResult`, meaning:
+- `data` is **always defined** (never `undefined`)
+- `isPending` is never `true` (the component suspends instead)
+- `isPlaceholderData` is not available
+- `promise` is not available
+
+If a `combine` function is provided, returns the combined result.
+
+## Examples
+
+### Basic Usage
+
+```tsx
+import { Suspense } from 'react'
+import { useSuspenseQueries } from '@tanstack/react-query'
+
+function Posts({ postIds }: { postIds: number[] }) {
+  const results = useSuspenseQueries({
+    queries: postIds.map((id) => ({
+      queryKey: ['post', id],
+      queryFn: () => fetchPost(id),
+    })),
+  })
+
+  // All data is always defined - no need to check for loading or undefined!
+  return (
+    <div>
+      {results.map((result, i) => (
+        <div key={i}>
+          <h2>{result.data.title}</h2>
+          <p>{result.data.body}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading posts...</div>}>
+      <Posts postIds={[1, 2, 3]} />
+    </Suspense>
+  )
+}
+```
+
+### Type-Safe Queries
+
+```tsx
+import { Suspense } from 'react'
+import { useSuspenseQueries } from '@tanstack/react-query'
+
+type Post = { id: number; title: string }
+type User = { id: number; name: string }
+
+function Dashboard() {
+  const results = useSuspenseQueries({
+    queries: [
+      {
+        queryKey: ['post', 1],
+        queryFn: async (): Promise<Post> => {
+          const res = await fetch('/api/posts/1')
+          return res.json()
+        },
+      },
+      {
+        queryKey: ['user', 1],
+        queryFn: async (): Promise<User> => {
+          const res = await fetch('/api/users/1')
+          return res.json()
+        },
+      },
+    ],
+  })
+
+  const [postResult, userResult] = results
+
+  // postResult.data is typed as Post (never undefined)
+  // userResult.data is typed as User (never undefined)
+
+  return (
+    <div>
+      <div>Post: {postResult.data.title}</div>
+      <div>User: {userResult.data.name}</div>
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <Dashboard />
+    </Suspense>
+  )
+}
+```
+
+### Using Combine
+
+```tsx
+import { Suspense } from 'react'
+import { useSuspenseQueries } from '@tanstack/react-query'
+
+function Posts({ postIds }: { postIds: number[] }) {
+  const { data, isRefetching } = useSuspenseQueries({
+    queries: postIds.map((id) => ({
+      queryKey: ['post', id],
+      queryFn: () => fetchPost(id),
+    })),
+    combine: (results) => ({
+      data: results.map((result) => result.data),
+      isRefetching: results.some((result) => result.isRefetching),
+    }),
+  })
+
+  // data is an array of all posts (never undefined)
+  return (
+    <div>
+      {isRefetching && <div>Refreshing...</div>}
+      {data.map((post, i) => (
+        <div key={i}>
+          <h2>{post.title}</h2>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading posts...</div>}>
+      <Posts postIds={[1, 2, 3]} />
+    </Suspense>
+  )
+}
+```
+
+### With Error Boundary
+
+```tsx
+import { Suspense } from 'react'
+import { ErrorBoundary } from 'react-error-boundary'
+import { useSuspenseQueries } from '@tanstack/react-query'
+
+function UserData({ userIds }: { userIds: number[] }) {
+  const results = useSuspenseQueries({
+    queries: userIds.map((id) => ({
+      queryKey: ['user', id],
+      queryFn: async () => {
+        const response = await fetch(`/api/users/${id}`)
+        if (!response.ok) throw new Error('Failed to fetch user')
+        return response.json()
+      },
+    })),
+  })
+
+  return (
+    <div>
+      {results.map((result, i) => (
+        <div key={i}>{result.data.name}</div>
+      ))}
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <ErrorBoundary fallback={<div>Error loading users</div>}>
+      <Suspense fallback={<div>Loading users...</div>}>
+        <UserData userIds={[1, 2, 3]} />
+      </Suspense>
+    </ErrorBoundary>
+  )
+}
+```
+
+### Dynamic Queries
+
+```tsx
+import { Suspense } from 'react'
+import { useSuspenseQueries } from '@tanstack/react-query'
+
+function DynamicData({ filters }: { filters: string[] }) {
+  const results = useSuspenseQueries({
+    queries: filters.map((filter) => ({
+      queryKey: ['items', filter],
+      queryFn: () => fetchItems(filter),
+    })),
+  })
+
+  // Number of queries will change as filters change
+  // Component will suspend when filters change until all new queries resolve
+
+  return (
+    <div>
+      {results.map((result, i) => (
+        <div key={i}>
+          <h3>{filters[i]}</h3>
+          <ul>
+            {result.data.map((item) => (
+              <li key={item.id}>{item.name}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function App() {
+  const [filters, setFilters] = useState(['category1', 'category2'])
+
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <DynamicData filters={filters} />
+    </Suspense>
+  )
+}
+```
+
+### Combine for Aggregate Data
+
+```tsx
+import { Suspense } from 'react'
+import { useSuspenseQueries } from '@tanstack/react-query'
+
+function Statistics({ userIds }: { userIds: number[] }) {
+  const { totalScore, isRefetching } = useSuspenseQueries({
+    queries: userIds.map((id) => ({
+      queryKey: ['userScore', id],
+      queryFn: () => fetchUserScore(id),
+    })),
+    combine: (results) => ({
+      totalScore: results.reduce((sum, result) => sum + result.data, 0),
+      isRefetching: results.some((result) => result.isRefetching),
+    }),
+  })
+
+  return (
+    <div>
+      <h1>Total Score: {totalScore}</h1>
+      {isRefetching && <span>Updating...</span>}
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <Suspense fallback={<div>Calculating...</div>}>
+      <Statistics userIds={[1, 2, 3, 4, 5]} />
+    </Suspense>
+  )
+}
+```
+
+### With Select
+
+```tsx
+import { Suspense } from 'react'
+import { useSuspenseQueries } from '@tanstack/react-query'
+
+function UserNames({ userIds }: { userIds: number[] }) {
+  const results = useSuspenseQueries({
+    queries: userIds.map((id) => ({
+      queryKey: ['user', id],
+      queryFn: () => fetchUser(id),
+      select: (user) => user.name,
+    })),
+  })
+
+  // Each result.data is a string (the user's name)
+  return (
+    <ul>
+      {results.map((result, i) => (
+        <li key={i}>{result.data}</li>
+      ))}
+    </ul>
+  )
+}
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading names...</div>}>
+      <UserNames userIds={[1, 2, 3]} />
+    </Suspense>
+  )
+}
+```
+
+### Refetching
+
+```tsx
+import { Suspense } from 'react'
+import { useSuspenseQueries } from '@tanstack/react-query'
+
+function Dashboard({ ids }: { ids: number[] }) {
+  const results = useSuspenseQueries({
+    queries: ids.map((id) => ({
+      queryKey: ['item', id],
+      queryFn: () => fetchItem(id),
+    })),
+  })
+
+  const refetchAll = () => {
+    results.forEach((result) => result.refetch())
+  }
+
+  const isAnyRefetching = results.some((result) => result.isRefetching)
+
+  return (
+    <div>
+      <button onClick={refetchAll} disabled={isAnyRefetching}>
+        {isAnyRefetching ? 'Refreshing...' : 'Refresh All'}
+      </button>
+      {results.map((result, i) => (
+        <div key={i}>{result.data.name}</div>
+      ))}
+    </div>
+  )
+}
+```

@@ -1,0 +1,435 @@
+---
+title: useQuery
+description: React hook for fetching and caching data with automatic background updates
+---
+
+The `useQuery` hook is the primary way to fetch and cache data in React Query. It subscribes to a query and returns the current state of the query.
+
+## Import
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+```
+
+## Signature
+
+```tsx
+function useQuery<
+  TQueryFnData = unknown,
+  TError = DefaultError,
+  TData = TQueryFnData,
+  TQueryKey extends QueryKey = QueryKey,
+>(
+  options: UseQueryOptions<TQueryFnData, TError, TData, TQueryKey>,
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError>
+```
+
+## Type Parameters
+
+- `TQueryFnData` - The type of data returned by the query function
+- `TError` - The type of error that can be thrown (defaults to `DefaultError`)
+- `TData` - The type of data returned by the select function (defaults to `TQueryFnData`)
+- `TQueryKey` - The type of the query key (defaults to `QueryKey`)
+
+## Parameters
+
+### options
+
+Type: `UseQueryOptions<TQueryFnData, TError, TData, TQueryKey>`
+
+The query configuration object with the following properties:
+
+#### queryKey
+
+- **Type:** `TQueryKey`
+- **Required:** Yes
+
+A unique identifier for the query. The query will automatically update when this key changes.
+
+```tsx
+queryKey: ['todos']
+queryKey: ['todos', todoId]
+queryKey: ['todos', filters]
+```
+
+#### queryFn
+
+- **Type:** `QueryFunction<TQueryFnData, TQueryKey> | SkipToken`
+- **Required:** Yes (unless using `skipToken`)
+
+The function that the query will use to request data. Receives a `QueryFunctionContext` object.
+
+```tsx
+queryFn: async ({ queryKey, signal }) => {
+  const [, todoId] = queryKey
+  const response = await fetch(`/api/todos/${todoId}`, { signal })
+  return response.json()
+}
+```
+
+#### enabled
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Set to `false` to disable the query from automatically running.
+
+#### retry
+
+- **Type:** `boolean | number | (failureCount: number, error: TError) => boolean`
+- **Default:** `3`
+
+If `false`, failed queries will not retry. If `true`, failed queries will retry infinitely. If set to a number, failed queries will retry until the retry count meets that number.
+
+#### retryDelay
+
+- **Type:** `number | (retryAttempt: number, error: TError) => number`
+- **Default:** Exponential backoff
+
+Determines the delay between retry attempts.
+
+#### staleTime
+
+- **Type:** `number | ((query: Query) => number)`
+- **Default:** `0`
+
+The time in milliseconds after data is considered stale. Stale queries are refetched automatically in the background when:
+- New instances of the query mount
+- The window is refocused
+- The network is reconnected
+- The query is optionally configured with a refetch interval
+
+#### gcTime
+
+- **Type:** `number | Infinity`
+- **Default:** `5 * 60 * 1000` (5 minutes)
+
+The time in milliseconds that unused/inactive cache data remains in memory. When a query's cache becomes unused or inactive, that cache data will be garbage collected after this duration.
+
+#### refetchInterval
+
+- **Type:** `number | false | ((query: Query) => number | false)`
+- **Default:** `false`
+
+If set to a number, the query will continuously refetch at this frequency in milliseconds.
+
+#### refetchIntervalInBackground
+
+- **Type:** `boolean`
+- **Default:** `false`
+
+If set to `true`, queries that are set to continuously refetch with a `refetchInterval` will continue to refetch while their tab/window is in the background.
+
+#### refetchOnMount
+
+- **Type:** `boolean | "always" | ((query: Query) => boolean | "always")`
+- **Default:** `true`
+
+If set to `true`, the query will refetch on mount if the data is stale. If set to `"always"`, the query will always refetch on mount.
+
+#### refetchOnWindowFocus
+
+- **Type:** `boolean | "always" | ((query: Query) => boolean | "always")`
+- **Default:** `true`
+
+If set to `true`, the query will refetch on window focus if the data is stale.
+
+#### refetchOnReconnect
+
+- **Type:** `boolean | "always" | ((query: Query) => boolean | "always")`
+- **Default:** `true`
+
+If set to `true`, the query will refetch on reconnect if the data is stale.
+
+#### select
+
+- **Type:** `(data: TQueryFnData) => TData`
+
+Transform or select a part of the data returned by the query function.
+
+```tsx
+select: (data) => data.map(todo => todo.name)
+```
+
+#### initialData
+
+- **Type:** `TQueryFnData | () => TQueryFnData`
+
+Initial data to use for the query. If set, this value will be used as the initial data for the query cache and skip the initial loading state.
+
+#### placeholderData
+
+- **Type:** `TQueryFnData | (previousData: TQueryFnData | undefined, previousQuery: Query | undefined) => TQueryFnData`
+
+Placeholder data to show while the query is loading for the first time. Unlike `initialData`, this data is not persisted to the cache.
+
+#### throwOnError
+
+- **Type:** `boolean | (error: TError, query: Query) => boolean`
+- **Default:** `false`
+
+Set to `true` to throw errors instead of setting the `error` property.
+
+#### subscribed
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Set to `false` to unsubscribe this observer from updates to the query cache.
+
+### queryClient
+
+- **Type:** `QueryClient`
+- **Optional**
+
+A custom QueryClient instance. If not provided, the client from the nearest QueryClientProvider will be used.
+
+## Returns
+
+Type: `UseQueryResult<TData, TError>`
+
+The query result object with the following properties:
+
+### data
+
+- **Type:** `TData | undefined`
+
+The data returned by the query function (or selected data if `select` is used).
+
+### error
+
+- **Type:** `TError | null`
+
+The error object if the query failed.
+
+### status
+
+- **Type:** `'pending' | 'error' | 'success'`
+
+The status of the query:
+- `pending` - The query has no data yet
+- `error` - The query encountered an error
+- `success` - The query was successful and data is available
+
+### fetchStatus
+
+- **Type:** `'fetching' | 'paused' | 'idle'`
+
+The fetch status of the query:
+- `fetching` - The query is currently fetching
+- `paused` - The query wanted to fetch, but is paused
+- `idle` - The query is not fetching
+
+### isPending
+
+- **Type:** `boolean`
+
+`true` if the query has no data yet.
+
+### isLoading
+
+- **Type:** `boolean`
+
+`true` if the query is in a loading state (same as `isPending && isFetching`).
+
+### isSuccess
+
+- **Type:** `boolean`
+
+`true` if the query was successful.
+
+### isError
+
+- **Type:** `boolean`
+
+`true` if the query encountered an error.
+
+### isFetching
+
+- **Type:** `boolean`
+
+`true` if the query is currently fetching.
+
+### isStale
+
+- **Type:** `boolean`
+
+`true` if the data in the cache is stale.
+
+### isPlaceholderData
+
+- **Type:** `boolean`
+
+`true` if the data shown is placeholder data.
+
+### isRefetching
+
+- **Type:** `boolean`
+
+`true` if the query is currently refetching (fetching while already having data).
+
+### isRefetchError
+
+- **Type:** `boolean`
+
+`true` if the query failed while refetching.
+
+### isLoadingError
+
+- **Type:** `boolean`
+
+`true` if the query failed while loading for the first time.
+
+### dataUpdatedAt
+
+- **Type:** `number`
+
+The timestamp of when the data was last successfully updated.
+
+### errorUpdatedAt
+
+- **Type:** `number`
+
+The timestamp of when the error was last updated.
+
+### failureCount
+
+- **Type:** `number`
+
+The number of times the query has failed.
+
+### failureReason
+
+- **Type:** `TError | null`
+
+The reason for the most recent failure.
+
+### refetch
+
+- **Type:** `(options?: RefetchOptions) => Promise<UseQueryResult>`
+
+A function to manually refetch the query.
+
+### promise
+
+- **Type:** `Promise<TData>`
+
+The pending promise for the current query execution.
+
+## Examples
+
+### Basic Query
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function TodosList() {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['todos'],
+    queryFn: async () => {
+      const response = await fetch('/api/todos')
+      if (!response.ok) throw new Error('Failed to fetch todos')
+      return response.json()
+    },
+  })
+
+  if (isLoading) return <div>Loading...</div>
+  if (error) return <div>Error: {error.message}</div>
+
+  return (
+    <ul>
+      {data.map(todo => (
+        <li key={todo.id}>{todo.title}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+### Query with Variables
+
+```tsx
+function Todo({ todoId }: { todoId: number }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['todo', todoId],
+    queryFn: async () => {
+      const response = await fetch(`/api/todos/${todoId}`)
+      return response.json()
+    },
+  })
+
+  if (isLoading) return <div>Loading...</div>
+
+  return <div>{data.title}</div>
+}
+```
+
+### Using Select to Transform Data
+
+```tsx
+function TodoNames() {
+  const { data } = useQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    select: (todos) => todos.map(todo => todo.name),
+  })
+
+  return <div>{data?.join(', ')}</div>
+}
+```
+
+### Dependent Query with Enabled
+
+```tsx
+function User({ userId }: { userId: number }) {
+  const { data: user } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  })
+
+  const { data: projects } = useQuery({
+    queryKey: ['projects', user?.id],
+    queryFn: () => fetchProjects(user!.id),
+    enabled: !!user,
+  })
+
+  // ...
+}
+```
+
+### Using skipToken for Conditional Queries
+
+```tsx
+import { useQuery, skipToken } from '@tanstack/react-query'
+
+function User({ userId }: { userId: number | null }) {
+  const { data } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: userId ? () => fetchUser(userId) : skipToken,
+  })
+
+  // ...
+}
+```
+
+### Initial Data
+
+```tsx
+function Todo({ todoId }: { todoId: number }) {
+  const queryClient = useQueryClient()
+
+  const { data } = useQuery({
+    queryKey: ['todo', todoId],
+    queryFn: () => fetchTodo(todoId),
+    initialData: () => {
+      // Use a todo from the 'todos' query as initial data
+      return queryClient
+        .getQueryData(['todos'])
+        ?.find((todo) => todo.id === todoId)
+    },
+  })
+
+  // ...
+}
+```

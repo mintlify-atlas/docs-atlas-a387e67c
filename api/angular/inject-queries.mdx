@@ -1,0 +1,271 @@
+---
+title: injectQueries
+description: Angular function for fetching multiple queries in parallel with signals
+---
+
+The `injectQueries` function allows you to fetch multiple queries in parallel while maintaining their individual states.
+
+## Import
+
+```ts
+import { injectQueries } from '@tanstack/angular-query-experimental'
+```
+
+## Signature
+
+```ts
+function injectQueries<T extends Array<any>, TCombinedResult = QueriesResults<T>>(
+  optionsFn: () => InjectQueriesOptions<T, TCombinedResult>,
+  injector?: Injector,
+): Signal<TCombinedResult>
+```
+
+## Parameters
+
+<ParamField path="optionsFn" type="() => InjectQueriesOptions<T, TCombinedResult>" required>
+  A function that returns configuration for multiple queries.
+
+  <Expandable title="properties">
+    <ParamField path="queries" type="QueriesOptions<T>" required>
+      An array of query options objects. Each element should be a query configuration.
+
+      ```ts
+      queries: [
+        { queryKey: ['todo', 1], queryFn: () => fetchTodo(1) },
+        { queryKey: ['todo', 2], queryFn: () => fetchTodo(2) },
+      ]
+      ```
+    </ParamField>
+
+    <ParamField path="combine" type="(result: QueriesResults<T>) => TCombinedResult">
+      Optional function to combine or transform the results from all queries.
+
+      ```ts
+      combine: (results) => ({
+        data: results.map(r => r.data()),
+        pending: results.some(r => r.isPending()),
+      })
+      ```
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="injector" type="Injector">
+  The injector to use for creating the queries.
+</ParamField>
+
+## Returns
+
+Returns a signal containing an array of query results, or the combined result if `combine` is used.
+
+<ResponseField name="[n].data()" type="TData | undefined">
+  The data for the nth query.
+</ResponseField>
+
+<ResponseField name="[n].error()" type="TError | null">
+  The error for the nth query.
+</ResponseField>
+
+<ResponseField name="[n].status()" type="'pending' | 'error' | 'success'">
+  The status of the nth query.
+</ResponseField>
+
+<ResponseField name="[n].isPending()" type="boolean">
+  `true` if the nth query is pending.
+</ResponseField>
+
+<ResponseField name="[n].isError()" type="boolean">
+  `true` if the nth query has errored.
+</ResponseField>
+
+<ResponseField name="[n].isSuccess()" type="boolean">
+  `true` if the nth query has succeeded.
+</ResponseField>
+
+## Example
+
+```ts
+import { Component, signal, computed } from '@angular/core'
+import { injectQueries } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-todos',
+  template: `
+    @for (result of queries(); track $index) {
+      @if (result.isPending()) {
+        <div>Loading...</div>
+      } @else if (result.isError()) {
+        <div>Error: {{ result.error()?.message }}</div>
+      } @else {
+        <div>{{ result.data()?.title }}</div>
+      }
+    }
+  `,
+})
+export class TodosComponent {
+  todoIds = signal([1, 2, 3])
+
+  queries = injectQueries(() => ({
+    queries: this.todoIds().map((id) => ({
+      queryKey: ['todo', id],
+      queryFn: () => fetchTodo(id),
+    })),
+  }))
+
+  // Computed state based on queries
+  allLoaded = computed(() => 
+    this.queries().every(result => !result.isPending())
+  )
+}
+```
+
+## With Combine
+
+```ts
+import { Component } from '@angular/core'
+import { injectQueries } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-user-profile',
+  template: `
+    @if (combined().isPending) {
+      <div>Loading...</div>
+    } @else if (combined().isError) {
+      <div>Error occurred</div>
+    } @else {
+      <h2>{{ combined().user?.name }}</h2>
+      <ul>
+        @for (post of combined().posts; track post.id) {
+          <li>{{ post.title }}</li>
+        }
+      </ul>
+    }
+  `,
+})
+export class UserProfileComponent {
+  combined = injectQueries(() => ({
+    queries: [
+      { queryKey: ['user', 1], queryFn: () => fetchUser(1) },
+      { queryKey: ['posts', 1], queryFn: () => fetchUserPosts(1) },
+    ],
+    combine: (results) => ({
+      user: results[0].data(),
+      posts: results[1].data(),
+      isPending: results.some((r) => r.isPending()),
+      isError: results.some((r) => r.isError()),
+    }),
+  }))
+}
+```
+
+## Dynamic Queries with Signals
+
+```ts
+import { Component, signal } from '@angular/core'
+import { injectQueries } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-dynamic-todos',
+  template: `
+    <button (click)="addTodo()">Add Query</button>
+    
+    @for (result of queries(); track $index) {
+      <div>
+        @if (result.data(); as todo) {
+          {{ todo.title }}
+        }
+      </div>
+    }
+  `,
+})
+export class DynamicTodosComponent {
+  todoIds = signal([1, 2, 3])
+
+  queries = injectQueries(() => ({
+    queries: this.todoIds().map((id) => ({
+      queryKey: ['todo', id],
+      queryFn: () => fetchTodo(id),
+    })),
+  }))
+
+  addTodo() {
+    this.todoIds.update(ids => [...ids, ids.length + 1])
+  }
+}
+```
+
+## With HttpClient
+
+```ts
+import { Component, inject } from '@angular/core'
+import { HttpClient } from '@angular/common/http'
+import { injectQueries } from '@tanstack/angular-query-experimental'
+import { lastValueFrom } from 'rxjs'
+
+interface Todo {
+  id: number
+  title: string
+}
+
+@Component({
+  selector: 'app-todos',
+  template: `
+    @for (result of queries(); track $index) {
+      @if (result.data(); as todo) {
+        <div>{{ todo.title }}</div>
+      }
+    }
+  `,
+})
+export class TodosComponent {
+  #http = inject(HttpClient)
+
+  queries = injectQueries(() => ({
+    queries: [1, 2, 3].map((id) => ({
+      queryKey: ['todo', id],
+      queryFn: async () => {
+        const response = this.#http.get<Todo>(
+          `https://api.example.com/todos/${id}`
+        )
+        return lastValueFrom(response)
+      },
+    })),
+  }))
+}
+```
+
+## Error Handling
+
+```ts
+import { Component, computed } from '@angular/core'
+import { injectQueries } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-todos',
+  template: `
+    @if (hasErrors()) {
+      <div class="error">Some queries failed</div>
+    }
+
+    @for (result of queries(); track $index) {
+      @if (result.isError()) {
+        <div>Error loading todo {{ $index + 1 }}</div>
+      } @else if (result.data(); as todo) {
+        <div>{{ todo.title }}</div>
+      }
+    }
+  `,
+})
+export class TodosComponent {
+  queries = injectQueries(() => ({
+    queries: [1, 2, 3].map((id) => ({
+      queryKey: ['todo', id],
+      queryFn: () => fetchTodo(id),
+    })),
+  }))
+
+  hasErrors = computed(() => 
+    this.queries().some(result => result.isError())
+  )
+}
+```

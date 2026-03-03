@@ -1,0 +1,436 @@
+---
+title: mutationOptions
+description: Helper function for creating type-safe, reusable mutation configurations
+---
+
+The `mutationOptions` helper function is used to create type-safe, reusable mutation option configurations. It provides better type inference and helps organize mutation definitions.
+
+## Import
+
+```tsx
+import { mutationOptions } from '@tanstack/react-query'
+```
+
+## Signature
+
+```tsx
+function mutationOptions<
+  TData = unknown,
+  TError = DefaultError,
+  TVariables = void,
+  TOnMutateResult = unknown,
+>(
+  options: UseMutationOptions<TData, TError, TVariables, TOnMutateResult>
+): UseMutationOptions<TData, TError, TVariables, TOnMutateResult>
+```
+
+## Parameters
+
+### options
+
+- **Type:** `UseMutationOptions<TData, TError, TVariables, TOnMutateResult>`
+- **Required:** Yes
+
+The mutation configuration object. Accepts all options that can be passed to `useMutation`, including:
+- `mutationKey` (optional)
+- `mutationFn`
+- `onMutate`
+- `onSuccess`
+- `onError`
+- `onSettled`
+- All other mutation options
+
+## Returns
+
+The same options object that was passed in, enhanced with better type inference.
+
+## Benefits
+
+- **Better Type Inference**: Automatically infers types from the mutation function
+- **Type Safety**: Ensures all options are type-safe
+- **Reusability**: Create reusable mutation definitions
+- **Centralized Configuration**: Keep mutation configurations in one place
+- **Easier Testing**: Mutation options can be tested independently
+- **Better IDE Support**: Improved autocomplete and type checking
+
+## Examples
+
+### Basic Usage
+
+```tsx
+import { mutationOptions, useMutation } from '@tanstack/react-query'
+
+type Todo = { id: number; title: string }
+type CreateTodoVariables = { title: string }
+
+const createTodoMutationOptions = mutationOptions({
+  mutationFn: async (variables: CreateTodoVariables): Promise<Todo> => {
+    const response = await fetch('/api/todos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(variables),
+    })
+    return response.json()
+  },
+  onSuccess: () => {
+    console.log('Todo created successfully!')
+  },
+})
+
+function CreateTodo() {
+  const mutation = useMutation(createTodoMutationOptions)
+  
+  return (
+    <button onClick={() => mutation.mutate({ title: 'New Todo' })}>
+      Create Todo
+    </button>
+  )
+}
+```
+
+### With Mutation Key
+
+```tsx
+import { mutationOptions, useMutation } from '@tanstack/react-query'
+
+const updateUserMutationOptions = mutationOptions({
+  mutationKey: ['updateUser'],
+  mutationFn: async (user: User) => {
+    const response = await fetch(`/api/users/${user.id}`, {
+      method: 'PUT',
+      body: JSON.stringify(user),
+    })
+    return response.json()
+  },
+})
+
+function UpdateUser() {
+  const mutation = useMutation(updateUserMutationOptions)
+  return <div>{/* ... */}</div>
+}
+```
+
+### Reusable Mutation Definitions
+
+```tsx
+import { mutationOptions } from '@tanstack/react-query'
+
+type Todo = { id: number; title: string; completed: boolean }
+type CreateTodoVariables = { title: string }
+type UpdateTodoVariables = { id: number; title?: string; completed?: boolean }
+
+export const todoMutations = {
+  create: () =>
+    mutationOptions({
+      mutationKey: ['createTodo'],
+      mutationFn: async (variables: CreateTodoVariables): Promise<Todo> => {
+        const res = await fetch('/api/todos', {
+          method: 'POST',
+          body: JSON.stringify(variables),
+        })
+        return res.json()
+      },
+    }),
+  
+  update: () =>
+    mutationOptions({
+      mutationKey: ['updateTodo'],
+      mutationFn: async (variables: UpdateTodoVariables): Promise<Todo> => {
+        const res = await fetch(`/api/todos/${variables.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(variables),
+        })
+        return res.json()
+      },
+    }),
+  
+  delete: () =>
+    mutationOptions({
+      mutationKey: ['deleteTodo'],
+      mutationFn: async (id: number): Promise<void> => {
+        await fetch(`/api/todos/${id}`, { method: 'DELETE' })
+      },
+    }),
+}
+
+// Usage
+function TodoActions() {
+  const createMutation = useMutation(todoMutations.create())
+  const updateMutation = useMutation(todoMutations.update())
+  const deleteMutation = useMutation(todoMutations.delete())
+  
+  return <div>{/* ... */}</div>
+}
+```
+
+### With Optimistic Updates
+
+```tsx
+import { mutationOptions, useMutation, useQueryClient } from '@tanstack/react-query'
+
+type Todo = { id: number; title: string }
+type UpdateTodoVariables = { id: number; title: string }
+
+const updateTodoMutationOptions = mutationOptions({
+  mutationKey: ['updateTodo'],
+  mutationFn: async (variables: UpdateTodoVariables): Promise<Todo> => {
+    const res = await fetch(`/api/todos/${variables.id}`, {
+      method: 'PUT',
+      body: JSON.stringify(variables),
+    })
+    return res.json()
+  },
+  onMutate: async (variables) => {
+    // Cancel outgoing refetches
+    await queryClient.cancelQueries({ queryKey: ['todos'] })
+    
+    // Snapshot previous value
+    const previousTodos = queryClient.getQueryData(['todos'])
+    
+    // Optimistically update
+    queryClient.setQueryData(['todos'], (old: Todo[]) =>
+      old.map((todo) =>
+        todo.id === variables.id ? { ...todo, ...variables } : todo
+      )
+    )
+    
+    return { previousTodos }
+  },
+  onError: (err, variables, context) => {
+    // Rollback on error
+    queryClient.setQueryData(['todos'], context?.previousTodos)
+  },
+  onSettled: () => {
+    queryClient.invalidateQueries({ queryKey: ['todos'] })
+  },
+})
+
+function UpdateTodo() {
+  const queryClient = useQueryClient()
+  const mutation = useMutation(updateTodoMutationOptions)
+  
+  return <div>{/* ... */}</div>
+}
+```
+
+### Mutation Factory Pattern
+
+```tsx
+import { mutationOptions, useQueryClient } from '@tanstack/react-query'
+
+type Todo = { id: number; title: string }
+
+export const createTodoMutations = (queryClient: QueryClient) => ({
+  create: mutationOptions({
+    mutationFn: async (title: string): Promise<Todo> => {
+      const res = await fetch('/api/todos', {
+        method: 'POST',
+        body: JSON.stringify({ title }),
+      })
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['todos'] })
+    },
+  }),
+  
+  delete: mutationOptions({
+    mutationFn: async (id: number) => {
+      await fetch(`/api/todos/${id}`, { method: 'DELETE' })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['todos'] })
+    },
+  }),
+})
+
+// Usage
+function Todos() {
+  const queryClient = useQueryClient()
+  const mutations = createTodoMutations(queryClient)
+  
+  const createMutation = useMutation(mutations.create)
+  const deleteMutation = useMutation(mutations.delete)
+  
+  return <div>{/* ... */}</div>
+}
+```
+
+### With Callbacks
+
+```tsx
+import { mutationOptions, useMutation } from '@tanstack/react-query'
+
+type CreateTodoVariables = { title: string }
+type Todo = { id: number; title: string }
+
+const createTodoMutationOptions = mutationOptions({
+  mutationFn: async (variables: CreateTodoVariables): Promise<Todo> => {
+    const res = await fetch('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify(variables),
+    })
+    return res.json()
+  },
+  onMutate: (variables) => {
+    console.log('Creating todo:', variables.title)
+  },
+  onSuccess: (data, variables) => {
+    console.log('Todo created:', data.id)
+  },
+  onError: (error, variables) => {
+    console.error('Failed to create todo:', error)
+  },
+  onSettled: (data, error, variables) => {
+    console.log('Mutation settled')
+  },
+})
+
+function CreateTodo() {
+  const mutation = useMutation(createTodoMutationOptions)
+  return <div>{/* ... */}</div>
+}
+```
+
+### Type-Safe Variables
+
+```tsx
+import { mutationOptions, useMutation } from '@tanstack/react-query'
+
+type User = { id: number; name: string; email: string }
+type UpdateUserVariables = {
+  id: number
+  name?: string
+  email?: string
+}
+
+const updateUserMutationOptions = mutationOptions({
+  mutationFn: async (variables: UpdateUserVariables): Promise<User> => {
+    const res = await fetch(`/api/users/${variables.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(variables),
+    })
+    return res.json()
+  },
+})
+
+function UpdateUser() {
+  const mutation = useMutation(updateUserMutationOptions)
+  
+  // TypeScript ensures correct variable types
+  const handleUpdate = () => {
+    mutation.mutate({
+      id: 1,
+      name: 'New Name',
+      // email is optional
+    })
+  }
+  
+  return <button onClick={handleUpdate}>Update</button>
+}
+```
+
+### With Retry Logic
+
+```tsx
+import { mutationOptions, useMutation } from '@tanstack/react-query'
+
+const uploadFileMutationOptions = mutationOptions({
+  mutationFn: async (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch('/api/upload', {
+      method: 'POST',
+      body: formData,
+    })
+    return res.json()
+  },
+  retry: 3, // Retry failed uploads 3 times
+  retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+})
+
+function FileUpload() {
+  const mutation = useMutation(uploadFileMutationOptions)
+  return <div>{/* ... */}</div>
+}
+```
+
+### Testing
+
+```tsx
+import { mutationOptions } from '@tanstack/react-query'
+import { expect, test, vi } from 'vitest'
+
+const createTodoMutationOptions = mutationOptions({
+  mutationFn: async (title: string) => {
+    const res = await fetch('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    })
+    return res.json()
+  },
+  onSuccess: () => {
+    console.log('Success!')
+  },
+})
+
+test('mutation options', () => {
+  expect(createTodoMutationOptions.mutationFn).toBeDefined()
+  expect(createTodoMutationOptions.onSuccess).toBeDefined()
+})
+
+test('can create todo', async () => {
+  const mockFetch = vi.fn(() =>
+    Promise.resolve({
+      json: () => Promise.resolve({ id: 1, title: 'Test' }),
+    })
+  )
+  
+  global.fetch = mockFetch as any
+  
+  const result = await createTodoMutationOptions.mutationFn('Test Todo')
+  
+  expect(result).toEqual({ id: 1, title: 'Test' })
+  expect(mockFetch).toHaveBeenCalledWith(
+    '/api/todos',
+    expect.objectContaining({ method: 'POST' })
+  )
+})
+```
+
+### Combining with useMutation Options
+
+```tsx
+import { mutationOptions, useMutation } from '@tanstack/react-query'
+
+const createTodoMutationOptions = mutationOptions({
+  mutationFn: async (title: string) => {
+    const res = await fetch('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    })
+    return res.json()
+  },
+})
+
+function CreateTodo() {
+  const mutation = useMutation({
+    ...createTodoMutationOptions,
+    // Override or add additional options
+    onSuccess: (data) => {
+      console.log('Todo created:', data.id)
+    },
+  })
+  
+  return <div>{/* ... */}</div>
+}
+```
+
+## Notes
+
+- `mutationOptions` is a type-safe identity function - it returns the same object you pass in
+- Helps TypeScript infer types automatically from your mutation function
+- Makes mutation configurations reusable across components and easier to test
+- Can be combined with additional options when using `useMutation`
+- The `mutationKey` is optional but recommended for tracking mutations with `useMutationState` or `useIsMutating`
+- Recommended pattern for organizing mutation definitions in larger applications

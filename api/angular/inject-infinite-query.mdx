@@ -1,0 +1,308 @@
+---
+title: injectInfiniteQuery
+description: Angular function for fetching paginated or infinite scrolling data with signals
+---
+
+The `injectInfiniteQuery` function is used for fetching data that is paginated or loaded incrementally, such as infinite scrolling lists.
+
+## Import
+
+```ts
+import { injectInfiniteQuery } from '@tanstack/angular-query-experimental'
+```
+
+## Signature
+
+```ts
+function injectInfiniteQuery<
+  TQueryFnData,
+  TError = DefaultError,
+  TData = InfiniteData<TQueryFnData>,
+  TQueryKey extends QueryKey = QueryKey,
+  TPageParam = unknown,
+>(
+  injectInfiniteQueryFn: () => CreateInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>,
+  options?: InjectInfiniteQueryOptions,
+): CreateInfiniteQueryResult<TData, TError>
+```
+
+## Type Parameters
+
+- `TQueryFnData` - The type of data returned by a single page of the query function
+- `TError` - The type of error that can be thrown (defaults to `DefaultError`)
+- `TData` - The type of the final data (defaults to `InfiniteData<TQueryFnData>`)
+- `TQueryKey` - The type of the query key (defaults to `QueryKey`)
+- `TPageParam` - The type of the page parameter (defaults to `unknown`)
+
+## Parameters
+
+<ParamField path="injectInfiniteQueryFn" type="() => CreateInfiniteQueryOptions" required>
+  A function that returns the infinite query configuration object.
+
+  <Expandable title="properties">
+    <ParamField path="queryKey" type="TQueryKey" required>
+      A unique identifier for the query.
+    </ParamField>
+
+    <ParamField path="queryFn" type="(context: QueryFunctionContext<TQueryKey, TPageParam>) => Promise<TQueryFnData>" required>
+      The function that fetches a page of data. Receives `pageParam` in the context.
+
+      ```ts
+      queryFn: async ({ pageParam = 0 }) => {
+        const response = this.http.get(`/api/todos?cursor=${pageParam}`)
+        return lastValueFrom(response)
+      }
+      ```
+    </ParamField>
+
+    <ParamField path="initialPageParam" type="TPageParam" required>
+      The initial page parameter to use for the first page.
+    </ParamField>
+
+    <ParamField path="getNextPageParam" type="(lastPage: TQueryFnData, allPages: TQueryFnData[], lastPageParam: TPageParam, allPageParams: TPageParam[]) => TPageParam | undefined | null" required>
+      Function to determine the next page parameter. Return `undefined` or `null` when there are no more pages.
+
+      ```ts
+      getNextPageParam: (lastPage) => lastPage.nextCursor
+      ```
+    </ParamField>
+
+    <ParamField path="getPreviousPageParam" type="(firstPage: TQueryFnData, allPages: TQueryFnData[], firstPageParam: TPageParam, allPageParams: TPageParam[]) => TPageParam | undefined | null">
+      Function to determine the previous page parameter for bi-directional pagination.
+    </ParamField>
+
+    <ParamField path="maxPages" type="number">
+      Maximum number of pages to store in the data.
+    </ParamField>
+
+    <ParamField path="enabled" type="boolean" default="true">
+      Set to `false` to disable the query from automatically running.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="options" type="InjectInfiniteQueryOptions">
+  Additional configuration options.
+
+  <Expandable title="properties">
+    <ParamField path="injector" type="Injector">
+      The injector to use for creating the infinite query.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Returns
+
+<ResponseField name="data()" type="InfiniteData<TData> | undefined">
+  The accumulated data from all pages. Contains `pages` array and `pageParams` array.
+</ResponseField>
+
+<ResponseField name="error()" type="TError | null">
+  The error object if the query failed.
+</ResponseField>
+
+<ResponseField name="status()" type="'pending' | 'error' | 'success'">
+  The current status of the query.
+</ResponseField>
+
+<ResponseField name="isPending()" type="boolean">
+  `true` if the query is in a pending state.
+</ResponseField>
+
+<ResponseField name="isFetching()" type="boolean">
+  `true` if the query is currently fetching.
+</ResponseField>
+
+<ResponseField name="isFetchingNextPage()" type="boolean">
+  `true` if the query is fetching the next page.
+</ResponseField>
+
+<ResponseField name="isFetchingPreviousPage()" type="boolean">
+  `true` if the query is fetching the previous page.
+</ResponseField>
+
+<ResponseField name="hasNextPage()" type="boolean">
+  `true` if there is a next page available to fetch.
+</ResponseField>
+
+<ResponseField name="hasPreviousPage()" type="boolean">
+  `true` if there is a previous page available to fetch.
+</ResponseField>
+
+<ResponseField name="fetchNextPage()" type="() => Promise<InfiniteQueryObserverResult>">
+  Function to fetch the next page.
+</ResponseField>
+
+<ResponseField name="fetchPreviousPage()" type="() => Promise<InfiniteQueryObserverResult>">
+  Function to fetch the previous page.
+</ResponseField>
+
+## Example
+
+```ts
+import { Component, inject } from '@angular/core'
+import { HttpClient } from '@angular/common/http'
+import { injectInfiniteQuery } from '@tanstack/angular-query-experimental'
+import { lastValueFrom } from 'rxjs'
+
+interface TodoPage {
+  items: Todo[]
+  nextCursor?: number
+}
+
+@Component({
+  selector: 'app-todo-list',
+  template: `
+    @for (page of query.data()?.pages; track $index) {
+      @for (todo of page.items; track todo.id) {
+        <div>{{ todo.title }}</div>
+      }
+    }
+
+    <button
+      (click)="query.fetchNextPage()"
+      [disabled]="!query.hasNextPage() || query.isFetchingNextPage()">
+      @if (query.isFetchingNextPage()) {
+        Loading more...
+      } @else if (query.hasNextPage()) {
+        Load More
+      } @else {
+        Nothing more to load
+      }
+    </button>
+  `,
+})
+export class TodoListComponent {
+  #http = inject(HttpClient)
+
+  query = injectInfiniteQuery(() => ({
+    queryKey: ['todos'],
+    queryFn: async ({ pageParam = 0 }) => {
+      const response = this.#http.get<TodoPage>(
+        `https://api.example.com/todos?cursor=${pageParam}&limit=10`
+      )
+      return lastValueFrom(response)
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  }))
+}
+```
+
+## With Bi-directional Pagination
+
+```ts
+import { Component, inject } from '@angular/core'
+import { injectInfiniteQuery } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-todo-list',
+  template: `
+    <button (click)="query.fetchPreviousPage()">
+      Load Previous
+    </button>
+
+    @for (page of query.data()?.pages; track $index) {
+      @for (todo of page.items; track todo.id) {
+        <div>{{ todo.title }}</div>
+      }
+    }
+
+    <button (click)="query.fetchNextPage()">
+      Load Next
+    </button>
+  `,
+})
+export class TodoListComponent {
+  query = injectInfiniteQuery(() => ({
+    queryKey: ['todos'],
+    queryFn: ({ pageParam = 0 }) => fetchTodos(pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    getPreviousPageParam: (firstPage) => firstPage.prevCursor,
+  }))
+}
+```
+
+## Infinite Scroll with Intersection Observer
+
+```ts
+import { Component, ElementRef, ViewChild, afterNextRender, inject } from '@angular/core'
+import { injectInfiniteQuery } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-infinite-scroll',
+  template: `
+    <div class="scroll-container">
+      @for (page of query.data()?.pages; track $index) {
+        @for (todo of page.items; track todo.id) {
+          <div>{{ todo.title }}</div>
+        }
+      }
+      <div #sentinel class="sentinel"></div>
+    </div>
+  `,
+})
+export class InfiniteScrollComponent {
+  @ViewChild('sentinel') sentinel!: ElementRef
+
+  query = injectInfiniteQuery(() => ({
+    queryKey: ['todos'],
+    queryFn: ({ pageParam = 0 }) => fetchTodos(pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  }))
+
+  constructor() {
+    afterNextRender(() => {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries[0].isIntersecting && this.query.hasNextPage()) {
+            this.query.fetchNextPage()
+          }
+        },
+        { threshold: 1.0 }
+      )
+
+      if (this.sentinel) {
+        observer.observe(this.sentinel.nativeElement)
+      }
+    })
+  }
+}
+```
+
+## With Reactive Filters
+
+```ts
+import { Component, signal } from '@angular/core'
+import { injectInfiniteQuery } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-filtered-list',
+  template: `
+    <input [(ngModel)]="filter" placeholder="Filter" />
+    
+    @for (page of query.data()?.pages; track $index) {
+      @for (todo of page.items; track todo.id) {
+        <div>{{ todo.title }}</div>
+      }
+    }
+
+    <button (click)="query.fetchNextPage()">
+      Load More
+    </button>
+  `,
+})
+export class FilteredListComponent {
+  filter = signal('')
+
+  query = injectInfiniteQuery(() => ({
+    queryKey: ['todos', this.filter()],
+    queryFn: ({ pageParam = 0 }) => 
+      fetchTodos({ cursor: pageParam, filter: this.filter() }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  }))
+}
+```

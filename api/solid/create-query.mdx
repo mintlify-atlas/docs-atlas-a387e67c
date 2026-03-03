@@ -1,0 +1,238 @@
+---
+title: createQuery
+description: Solid primitive for fetching and caching data with automatic reactivity
+---
+
+The `createQuery` primitive is the primary way to fetch and cache data in Solid Query. It subscribes to a query and returns reactive state.
+
+## Import
+
+```tsx
+import { createQuery } from '@tanstack/solid-query'
+```
+
+## Signature
+
+```ts
+function createQuery<
+  TQueryFnData = unknown,
+  TError = DefaultError,
+  TData = TQueryFnData,
+  TQueryKey extends QueryKey = QueryKey,
+>(
+  options: Accessor<CreateQueryOptions<TQueryFnData, TError, TData, TQueryKey>>,
+  queryClient?: Accessor<QueryClient>,
+): CreateQueryResult<TData, TError>
+```
+
+## Type Parameters
+
+- `TQueryFnData` - The type of data returned by the query function
+- `TError` - The type of error that can be thrown (defaults to `DefaultError`)
+- `TData` - The type of data returned by the select function (defaults to `TQueryFnData`)
+- `TQueryKey` - The type of the query key (defaults to `QueryKey`)
+
+## Parameters
+
+<ParamField path="options" type="Accessor<CreateQueryOptions>" required>
+  An accessor function that returns the query configuration object. This makes the query automatically reactive to Solid signals.
+
+  <Expandable title="properties">
+    <ParamField path="queryKey" type="TQueryKey" required>
+      A unique identifier for the query. The query will automatically update when this key changes.
+
+      ```tsx
+      queryKey: ['todos']
+      queryKey: ['todos', todoId()]
+      ```
+    </ParamField>
+
+    <ParamField path="queryFn" type="QueryFunction<TQueryFnData, TQueryKey>" required>
+      The function that the query will use to request data. Receives a `QueryFunctionContext` object.
+
+      ```ts
+      queryFn: async ({ queryKey, signal }) => {
+        const [, todoId] = queryKey
+        const response = await fetch(`/api/todos/${todoId}`, { signal })
+        return response.json()
+      }
+      ```
+    </ParamField>
+
+    <ParamField path="enabled" type="boolean" default="true">
+      Set to `false` to disable the query from automatically running.
+    </ParamField>
+
+    <ParamField path="staleTime" type="number | ((query: Query) => number)" default="0">
+      The time in milliseconds after data is considered stale.
+    </ParamField>
+
+    <ParamField path="gcTime" type="number | Infinity" default="300000">
+      The time in milliseconds that unused/inactive cache data remains in memory (5 minutes by default).
+    </ParamField>
+
+    <ParamField path="retry" type="boolean | number | ((failureCount: number, error: TError) => boolean)" default="3">
+      Configure retry behavior for failed queries.
+    </ParamField>
+
+    <ParamField path="refetchInterval" type="number | false | ((query: Query) => number | false)" default="false">
+      If set to a number, the query will continuously refetch at this frequency in milliseconds.
+    </ParamField>
+
+    <ParamField path="refetchOnMount" type="boolean | 'always'" default="true">
+      If set to `true`, the query will refetch on mount if the data is stale.
+    </ParamField>
+
+    <ParamField path="refetchOnWindowFocus" type="boolean | 'always'" default="true">
+      If set to `true`, the query will refetch on window focus if the data is stale.
+    </ParamField>
+
+    <ParamField path="refetchOnReconnect" type="boolean | 'always'" default="true">
+      If set to `true`, the query will refetch on reconnect if the data is stale.
+    </ParamField>
+
+    <ParamField path="select" type="(data: TQueryFnData) => TData">
+      Transform or select a part of the data returned by the query function.
+    </ParamField>
+
+    <ParamField path="reconcile" type="string | false | ((oldData: TData | undefined, newData: TData) => TData)">
+      Solid-specific option for reconciliation. Set to a reconciliation key string, `false` to disable, or a custom reconciliation function.
+    </ParamField>
+
+    <ParamField path="initialData" type="TQueryFnData | () => TQueryFnData">
+      Initial data to use for the query. When provided, the query will start in a success state.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="queryClient" type="Accessor<QueryClient>">
+  Custom QueryClient accessor. If not provided, the one from the nearest context will be used.
+</ParamField>
+
+## Returns
+
+Returns a store with reactive query state:
+
+<ResponseField name="data" type="TData | undefined">
+  The data returned by the query function.
+</ResponseField>
+
+<ResponseField name="error" type="TError | null">
+  The error object if the query failed.
+</ResponseField>
+
+<ResponseField name="status" type="'pending' | 'error' | 'success'">
+  The current status of the query.
+</ResponseField>
+
+<ResponseField name="isPending" type="boolean">
+  `true` if the query is in a pending state (initial load with no data).
+</ResponseField>
+
+<ResponseField name="isLoading" type="boolean">
+  `true` if the query is fetching for the first time.
+</ResponseField>
+
+<ResponseField name="isError" type="boolean">
+  `true` if the query has errored.
+</ResponseField>
+
+<ResponseField name="isSuccess" type="boolean">
+  `true` if the query has successfully loaded data.
+</ResponseField>
+
+<ResponseField name="isFetching" type="boolean">
+  `true` if the query is currently fetching (includes background refetches).
+</ResponseField>
+
+<ResponseField name="refetch" type="() => Promise<CreateQueryResult>">
+  Function to manually refetch the query.
+</ResponseField>
+
+## Example
+
+```tsx
+import { createQuery } from '@tanstack/solid-query'
+import { createSignal } from 'solid-js'
+
+function TodoComponent() {
+  const [todoId, setTodoId] = createSignal(1)
+
+  const query = createQuery(() => ({
+    queryKey: ['todo', todoId()],
+    queryFn: async () => {
+      const response = await fetch(
+        `https://api.example.com/todos/${todoId()}`
+      )
+      if (!response.ok) throw new Error('Failed to fetch todo')
+      return response.json()
+    },
+    staleTime: 5000,
+  }))
+
+  return (
+    <div>
+      <Show when={query.isPending}>
+        <div>Loading...</div>
+      </Show>
+      <Show when={query.isError}>
+        <div>Error: {query.error?.message}</div>
+      </Show>
+      <Show when={query.isSuccess}>
+        <div>{query.data?.title}</div>
+      </Show>
+    </div>
+  )
+}
+```
+
+## Reactive Queries
+
+The options accessor makes queries automatically reactive to Solid signals:
+
+```tsx
+import { createQuery } from '@tanstack/solid-query'
+import { createSignal } from 'solid-js'
+
+function App() {
+  const [enabled, setEnabled] = createSignal(true)
+  const [todoId, setTodoId] = createSignal(1)
+
+  const query = createQuery(() => ({
+    queryKey: ['todo', todoId()],
+    queryFn: () => fetchTodo(todoId()),
+    enabled: enabled(), // Automatically reactive
+  }))
+
+  return (
+    <div>
+      <button onClick={() => setEnabled(!enabled())}>
+        Toggle Enabled
+      </button>
+      <div>{query.data?.title}</div>
+    </div>
+  )
+}
+```
+
+## With Reconciliation
+
+Solid Query supports Solid's reconciliation for efficient updates:
+
+```tsx
+const query = createQuery(() => ({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  reconcile: 'id', // Use 'id' field for reconciliation
+}))
+
+// Or custom reconciliation function
+const query = createQuery(() => ({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  reconcile: (oldData, newData) => {
+    // Custom reconciliation logic
+    return reconcile(oldData, newData, { key: 'id' })
+  },
+}))
+```

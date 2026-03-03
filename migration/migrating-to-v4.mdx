@@ -1,0 +1,410 @@
+---
+title: Migrating to v4
+description: Guide to migrating from TanStack Query v3 to v4 with breaking changes and new features
+---
+
+TanStack Query v4 introduced a new package name, improved TypeScript support, and better offline handling. This guide will help you migrate from v3 to v4.
+
+## Breaking Changes
+
+### New Package Name
+
+The library has been renamed from `react-query` to `@tanstack/react-query`.
+
+```bash
+# Uninstall old packages
+npm uninstall react-query
+
+# Install new packages
+npm install @tanstack/react-query
+npm install @tanstack/react-query-devtools
+```
+
+**Update imports:**
+
+```tsx
+// ❌ v3
+import { useQuery } from 'react-query'
+import { ReactQueryDevtools } from 'react-query/devtools'
+
+// ✅ v4
+import { useQuery } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+```
+
+**Migration:** Use the [replace-import-specifier codemod](/plugins/codemods#replace-import-specifier).
+
+### Query Keys Must Be Arrays
+
+String query keys are no longer supported. All keys must be arrays.
+
+```tsx
+// ❌ v3
+useQuery('todos', fetchTodos)
+queryClient.invalidateQueries('todos')
+
+// ✅ v4
+useQuery(['todos'], fetchTodos)
+queryClient.invalidateQueries(['todos'])
+```
+
+**Why?** This ensures consistency across all APIs and makes working with filters and predicates easier.
+
+**Migration:** Use the [key-transformation codemod](/plugins/codemods#key-transformation).
+
+### `idle` Status Removed
+
+The `idle` status has been replaced with `loading` status and `fetchStatus: 'idle'`.
+
+```tsx
+// ❌ v3
+const { status } = useQuery(['user'], fetchUser, { enabled: false })
+// status === 'idle'
+
+// ✅ v4
+const { status, fetchStatus } = useQuery({
+  queryKey: ['user'],
+  queryFn: fetchUser,
+  enabled: false,
+})
+// status === 'loading'
+// fetchStatus === 'idle'
+```
+
+**For disabled queries:**
+
+```tsx
+// v3: Check isLoading for initial loading
+if (isLoading) { /* show spinner */ }
+
+// v4: Use isInitialLoading instead
+if (isInitialLoading) { /* show spinner */ }
+```
+
+See the [dependent queries guide](https://tanstack.com/query/latest/docs/framework/react/guides/dependent-queries) for more details.
+
+### New `useQueries` API
+
+The hook now accepts an object with a `queries` property.
+
+```tsx
+// ❌ v3
+useQueries([
+  { queryKey: ['user', 1], queryFn: () => fetchUser(1) },
+  { queryKey: ['user', 2], queryFn: () => fetchUser(2) },
+])
+
+// ✅ v4
+useQueries({
+  queries: [
+    { queryKey: ['user', 1], queryFn: () => fetchUser(1) },
+    { queryKey: ['user', 2], queryFn: () => fetchUser(2) },
+  ],
+})
+```
+
+### `undefined` is Illegal for Successful Queries
+
+`undefined` cannot be a valid query result to prevent accidental bugs.
+
+```tsx
+// ❌ Bad - Promise<void> is not allowed
+useQuery(['key'], () =>
+  axios.get(url).then((result) => console.log(result.data))
+)
+// This logs data but returns undefined
+
+// ✅ Good - Return the data
+useQuery(['key'], () =>
+  axios.get(url).then((result) => result.data)
+)
+```
+
+Returning `undefined` will cause the query to fail, and an error will be logged in development.
+
+### Network Connection Required by Default
+
+Queries and mutations now require a network connection by default.
+
+```tsx
+// v4 default behavior
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  // Implicitly: networkMode: 'online'
+})
+// Query pauses when offline
+
+// Opt into v3 behavior
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      networkMode: 'offlineFirst',
+    },
+    mutations: {
+      networkMode: 'offlineFirst',
+    },
+  },
+})
+```
+
+See the [Network Mode guide](https://tanstack.com/query/latest/docs/framework/react/guides/network-mode) for details.
+
+### `notifyOnChangeProps` Defaults to `"tracked"`
+
+```tsx
+// v3: Re-rendered on any query change
+const { data } = useQuery(['todos'], fetchTodos)
+
+// v4: Only re-renders when accessed properties change
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  // Implicitly: notifyOnChangeProps: 'tracked'
+})
+
+// Opt out to v3 behavior
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  notifyOnChangeProps: 'all',
+})
+```
+
+### `notifyOnChangePropsExclusion` Removed
+
+No longer needed since `tracked` is now the default.
+
+### `cancelRefetch` Defaults to `true`
+
+Imperative refetches now cancel ongoing fetches by default.
+
+```tsx
+// v3: Second call was ignored if first was still running
+queryClient.refetchQueries(['todos'])
+queryClient.refetchQueries(['todos'])
+
+// v4: Second call cancels first and starts new fetch
+queryClient.refetchQueries({ queryKey: ['todos'] })
+queryClient.refetchQueries({ queryKey: ['todos'] })
+
+// Opt into v3 behavior
+queryClient.refetchQueries({ queryKey: ['todos'] })
+queryClient.refetchQueries(
+  { queryKey: ['todos'] },
+  { cancelRefetch: false }
+)
+```
+
+Affected methods:
+- `queryClient.refetchQueries`
+- `queryClient.invalidateQueries`
+- `queryClient.resetQueries`
+- `refetch` from `useQuery`
+- `fetchNextPage` and `fetchPreviousPage` from `useInfiniteQuery`
+
+### Query Filters Simplified
+
+Boolean filter flags combined into single `type` option.
+
+```tsx
+// ❌ v3
+queryClient.invalidateQueries('todos', {
+  active: true,
+  inactive: false,
+})
+
+// ✅ v4
+queryClient.invalidateQueries({
+  queryKey: ['todos'],
+  type: 'active',
+})
+```
+
+**Filter options:**
+- `type: 'active'` - Only active queries
+- `type: 'inactive'` - Only inactive queries  
+- `type: 'all'` - All queries (default)
+
+**Refetch filters:**
+
+```tsx
+// ❌ v3
+queryClient.invalidateQueries('todos', {
+  refetchActive: true,
+  refetchInactive: false,
+})
+
+// ✅ v4
+queryClient.invalidateQueries({
+  queryKey: ['todos'],
+  refetchType: 'active',
+})
+```
+
+**Refetch type options:**
+- `refetchType: 'active'` - Refetch active queries (default)
+- `refetchType: 'inactive'` - Refetch inactive queries
+- `refetchType: 'all'` - Refetch all queries
+- `refetchType: 'none'` - Don't refetch, only invalidate
+
+### `onSuccess` Not Called from `setQueryData`
+
+The `onSuccess` callback is now only called when a request is made.
+
+```tsx
+// v3: This triggered onSuccess
+queryClient.setQueryData(['user'], newUser)
+
+// v4: This does NOT trigger onSuccess
+queryClient.setQueryData(['user'], newUser)
+
+// Use useEffect to react to data changes
+const { data } = useQuery({ queryKey: ['user'], queryFn: fetchUser })
+
+React.useEffect(() => {
+  // Runs when data changes
+  if (data) {
+    console.log('Data updated:', data)
+  }
+}, [data])
+```
+
+### Persister Plugins Renamed
+
+Persistence plugins are no longer experimental.
+
+```tsx
+// ❌ v3
+import { persistQueryClient } from 'react-query/persistQueryClient-experimental'
+import { createWebStoragePersistor } from 'react-query/createWebStoragePersistor-experimental'
+
+// ✅ v4
+import { persistQueryClient } from '@tanstack/react-query-persist-client'
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister'
+```
+
+**Name changes:**
+- `createWebStoragePersistor` → `createSyncStoragePersister`
+- `createAsyncStoragePersistor` → `createAsyncStoragePersister`
+- `Persistor` interface → `Persister`
+
+### `cancel` Method on Promises Removed
+
+Use `AbortController` API instead.
+
+```tsx
+// ❌ v3 - Old cancel function
+const query = useQuery(['user'], () => {
+  const promise = fetchUser()
+  promise.cancel = () => {
+    // Custom cancellation
+  }
+  return promise
+})
+
+// ✅ v4 - AbortController
+const query = useQuery({
+  queryKey: ['user'],
+  queryFn: ({ signal }) => fetchUser(signal),
+})
+
+function fetchUser(signal) {
+  return fetch('/api/user', { signal })
+}
+```
+
+## New Features
+
+### Proper Offline Support
+
+New `networkMode` option and `fetchStatus` for better offline handling.
+
+```tsx
+const { data, status, fetchStatus } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  networkMode: 'offlineFirst', // or 'online' or 'always'
+})
+
+// status: 'loading' | 'error' | 'success'
+// fetchStatus: 'fetching' | 'paused' | 'idle'
+```
+
+**Network modes:**
+- `online` - Only runs when online (default)
+- `offlineFirst` - Runs regardless of network status
+- `always` - Always runs, never pauses
+
+### Why Two Different States?
+
+- `status` - Data state (do we have data?)
+- `fetchStatus` - Query function state (is the queryFn running?)
+
+See [Why two different states?](https://tanstack.com/query/latest/docs/framework/react/guides/queries#why-two-different-states)
+
+### `useQueries` Improvements
+
+Better TypeScript support and more flexible API.
+
+```tsx
+const results = useQueries({
+  queries: [
+    { queryKey: ['post', 1], queryFn: () => fetchPost(1) },
+    { queryKey: ['post', 2], queryFn: () => fetchPost(2) },
+  ],
+})
+```
+
+### Tracked Queries by Default
+
+Automatic render optimization without manual configuration.
+
+```tsx
+// Only re-renders when 'data' changes
+const { data } = useQuery({ queryKey: ['todos'], queryFn: fetchTodos })
+```
+
+## Migration Steps
+
+1. **Update package names**
+   ```bash
+   npm uninstall react-query
+   npm install @tanstack/react-query @tanstack/react-query-devtools
+   ```
+
+2. **Run import codemod**
+   ```bash
+   npx jscodeshift@latest ./src --extensions=ts,tsx --parser=tsx \
+     --transform=./node_modules/@tanstack/react-query/build/codemods/src/v4/replace-import-specifier.cjs
+   ```
+
+3. **Run key transformation codemod**
+   ```bash
+   npx jscodeshift@latest ./src --extensions=ts,tsx --parser=tsx \
+     --transform=./node_modules/@tanstack/react-query/build/codemods/src/v4/key-transformation.cjs
+   ```
+
+4. **Update disabled queries** (use `isInitialLoading` instead of `isLoading`)
+
+5. **Review filter usage** (update `active`/`inactive` to `type`)
+
+6. **Test offline behavior** (queries pause when offline by default)
+
+7. **Update `onSuccess` usage** (move to `useEffect` if needed)
+
+8. **Format and lint**
+   ```bash
+   npm run prettier --write .
+   npm run eslint --fix .
+   ```
+
+9. **Test thoroughly**
+
+## Resources
+
+- [v4 Announcement](https://tanstack.com/blog/announcing-tanstack-query-v4)
+- [Network Mode Guide](https://tanstack.com/query/latest/docs/framework/react/guides/network-mode)
+- [Query Filters](https://tanstack.com/query/latest/docs/framework/react/guides/filters)
+- [Codemods](/plugins/codemods)

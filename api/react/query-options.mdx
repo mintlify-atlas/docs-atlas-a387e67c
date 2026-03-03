@@ -1,0 +1,367 @@
+---
+title: queryOptions
+description: Helper function for creating type-safe, reusable query configurations
+---
+
+The `queryOptions` helper function is used to create type-safe, reusable query option configurations. It provides better type inference and helps organize query definitions.
+
+## Import
+
+```tsx
+import { queryOptions } from '@tanstack/react-query'
+```
+
+## Signature
+
+```tsx
+function queryOptions<
+  TQueryFnData = unknown,
+  TError = DefaultError,
+  TData = TQueryFnData,
+  TQueryKey extends QueryKey = QueryKey,
+>(
+  options: UseQueryOptions<TQueryFnData, TError, TData, TQueryKey>
+): UseQueryOptions<TQueryFnData, TError, TData, TQueryKey> & {
+  queryKey: DataTag<TQueryKey, TQueryFnData, TError>
+}
+```
+
+## Parameters
+
+### options
+
+- **Type:** `UseQueryOptions<TQueryFnData, TError, TData, TQueryKey>`
+- **Required:** Yes
+
+The query configuration object. Accepts all options that can be passed to `useQuery`.
+
+## Returns
+
+The same options object that was passed in, enhanced with better type inference. The function is essentially a type-safe identity function.
+
+## Benefits
+
+- **Better Type Inference**: Automatically infers types from the query function
+- **Type Safety**: Ensures all options are type-safe
+- **Reusability**: Create reusable query definitions
+- **Centralized Configuration**: Keep query configurations in one place
+- **Easier Testing**: Query options can be tested independently
+- **Better IDE Support**: Improved autocomplete and type checking
+
+## Examples
+
+### Basic Usage
+
+```tsx
+import { queryOptions, useQuery } from '@tanstack/react-query'
+
+const todosQueryOptions = queryOptions({
+  queryKey: ['todos'],
+  queryFn: async () => {
+    const response = await fetch('/api/todos')
+    return response.json()
+  },
+  staleTime: 5000,
+})
+
+function Todos() {
+  const { data } = useQuery(todosQueryOptions)
+  // data is fully typed based on the queryFn return type
+}
+```
+
+### With Variables
+
+```tsx
+import { queryOptions, useQuery } from '@tanstack/react-query'
+
+const todoQueryOptions = (id: number) =>
+  queryOptions({
+    queryKey: ['todo', id],
+    queryFn: async () => {
+      const response = await fetch(`/api/todos/${id}`)
+      return response.json()
+    },
+  })
+
+function Todo({ id }: { id: number }) {
+  const { data } = useQuery(todoQueryOptions(id))
+  return <div>{data.title}</div>
+}
+```
+
+### Reusable Query Definitions
+
+```tsx
+import { queryOptions } from '@tanstack/react-query'
+
+type Todo = {
+  id: number
+  title: string
+  completed: boolean
+}
+
+export const queries = {
+  todos: {
+    all: () =>
+      queryOptions({
+        queryKey: ['todos'],
+        queryFn: async (): Promise<Todo[]> => {
+          const res = await fetch('/api/todos')
+          return res.json()
+        },
+      }),
+    detail: (id: number) =>
+      queryOptions({
+        queryKey: ['todos', id],
+        queryFn: async (): Promise<Todo> => {
+          const res = await fetch(`/api/todos/${id}`)
+          return res.json()
+        },
+      }),
+    byStatus: (completed: boolean) =>
+      queryOptions({
+        queryKey: ['todos', { completed }],
+        queryFn: async (): Promise<Todo[]> => {
+          const res = await fetch(`/api/todos?completed=${completed}`)
+          return res.json()
+        },
+      }),
+  },
+}
+
+// Usage
+function TodosList() {
+  const { data } = useQuery(queries.todos.all())
+  return <div>{/* ... */}</div>
+}
+
+function Todo({ id }: { id: number }) {
+  const { data } = useQuery(queries.todos.detail(id))
+  return <div>{data.title}</div>
+}
+```
+
+### With Select
+
+```tsx
+import { queryOptions, useQuery } from '@tanstack/react-query'
+
+const todoTitlesOptions = queryOptions({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  select: (todos) => todos.map((todo) => todo.title),
+})
+
+function TodoTitles() {
+  const { data } = useQuery(todoTitlesOptions)
+  // data is typed as string[]
+  return <div>{data.join(', ')}</div>
+}
+```
+
+### With Initial Data
+
+```tsx
+import { queryOptions, useQuery, useQueryClient } from '@tanstack/react-query'
+
+const todoOptions = (id: number) =>
+  queryOptions({
+    queryKey: ['todo', id],
+    queryFn: () => fetchTodo(id),
+  })
+
+function Todo({ id }: { id: number }) {
+  const queryClient = useQueryClient()
+
+  const { data } = useQuery({
+    ...todoOptions(id),
+    initialData: () => {
+      return queryClient
+        .getQueryData(['todos'])
+        ?.find((todo) => todo.id === id)
+    },
+  })
+
+  return <div>{data?.title}</div>
+}
+```
+
+### Prefetching with Options
+
+```tsx
+import { queryOptions, useQueryClient } from '@tanstack/react-query'
+
+const postOptions = (id: number) =>
+  queryOptions({
+    queryKey: ['post', id],
+    queryFn: () => fetchPost(id),
+    staleTime: 10 * 60 * 1000, // 10 minutes
+  })
+
+function PostLink({ id }: { id: number }) {
+  const queryClient = useQueryClient()
+
+  const handleMouseEnter = () => {
+    queryClient.prefetchQuery(postOptions(id))
+  }
+
+  return (
+    <a href={`/posts/${id}`} onMouseEnter={handleMouseEnter}>
+      View Post
+    </a>
+  )
+}
+```
+
+### Server-Side Prefetching
+
+```tsx
+import { queryOptions, QueryClient, dehydrate } from '@tanstack/react-query'
+
+const todosOptions = queryOptions({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+})
+
+// Server-side (Next.js example)
+export async function getServerSideProps() {
+  const queryClient = new QueryClient()
+
+  await queryClient.prefetchQuery(todosOptions)
+
+  return {
+    props: {
+      dehydratedState: dehydrate(queryClient),
+    },
+  }
+}
+```
+
+### Conditional Queries
+
+```tsx
+import { queryOptions, useQuery } from '@tanstack/react-query'
+
+const userPostsOptions = (userId: number | null) =>
+  queryOptions({
+    queryKey: ['posts', userId],
+    queryFn: () => fetchUserPosts(userId!),
+    enabled: userId !== null,
+  })
+
+function UserPosts({ userId }: { userId: number | null }) {
+  const { data } = useQuery(userPostsOptions(userId))
+  return <div>{/* ... */}</div>
+}
+```
+
+### Query Factories
+
+```tsx
+import { queryOptions } from '@tanstack/react-query'
+
+type User = { id: number; name: string }
+type Post = { id: number; title: string; userId: number }
+
+export const userQueries = {
+  all: () =>
+    queryOptions({
+      queryKey: ['users'],
+      queryFn: async (): Promise<User[]> => {
+        const res = await fetch('/api/users')
+        return res.json()
+      },
+    }),
+  
+  detail: (userId: number) =>
+    queryOptions({
+      queryKey: ['users', userId],
+      queryFn: async (): Promise<User> => {
+        const res = await fetch(`/api/users/${userId}`)
+        return res.json()
+      },
+    }),
+  
+  posts: (userId: number) =>
+    queryOptions({
+      queryKey: ['users', userId, 'posts'],
+      queryFn: async (): Promise<Post[]> => {
+        const res = await fetch(`/api/users/${userId}/posts`)
+        return res.json()
+      },
+    }),
+}
+
+// Usage
+function UserProfile({ userId }: { userId: number }) {
+  const { data: user } = useQuery(userQueries.detail(userId))
+  const { data: posts } = useQuery(userQueries.posts(userId))
+  
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <ul>
+        {posts.map((post) => (
+          <li key={post.id}>{post.title}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+### With Custom Cache Time
+
+```tsx
+import { queryOptions, useQuery } from '@tanstack/react-query'
+
+const staticDataOptions = queryOptions({
+  queryKey: ['static-data'],
+  queryFn: fetchStaticData,
+  staleTime: Infinity,
+  gcTime: Infinity,
+})
+
+function StaticContent() {
+  const { data } = useQuery(staticDataOptions)
+  return <div>{/* ... */}</div>
+}
+```
+
+### Testing
+
+```tsx
+import { queryOptions } from '@tanstack/react-query'
+import { expect, test } from 'vitest'
+
+const todosOptions = queryOptions({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+})
+
+test('todos query options', () => {
+  expect(todosOptions.queryKey).toEqual(['todos'])
+  expect(todosOptions.queryFn).toBeDefined()
+})
+
+test('can fetch todos', async () => {
+  const data = await todosOptions.queryFn({
+    queryKey: todosOptions.queryKey,
+    signal: new AbortController().signal,
+    meta: undefined,
+  })
+  
+  expect(data).toBeDefined()
+  expect(Array.isArray(data)).toBe(true)
+})
+```
+
+## Notes
+
+- `queryOptions` is a type-safe identity function - it returns the same object you pass in
+- Helps TypeScript infer types automatically from your query function
+- Makes query configurations reusable across components, server prefetching, and testing
+- Can be combined with other query options when using `useQuery`
+- Works with all query types: regular queries, suspense queries, and prefetch queries
+- Recommended pattern for organizing query definitions in larger applications

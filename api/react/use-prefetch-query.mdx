@@ -1,0 +1,296 @@
+---
+title: usePrefetchQuery
+description: React hook for prefetching queries during component render
+---
+
+The `usePrefetchQuery` hook is used to prefetch a query during component render. It checks if the query data already exists in the cache, and if not, it prefetches the data.
+
+## Import
+
+```tsx
+import { usePrefetchQuery } from '@tanstack/react-query'
+```
+
+## Signature
+
+```tsx
+function usePrefetchQuery<
+  TQueryFnData = unknown,
+  TError = DefaultError,
+  TData = TQueryFnData,
+  TQueryKey extends QueryKey = QueryKey,
+>(
+  options: UsePrefetchQueryOptions<TQueryFnData, TError, TData, TQueryKey>,
+  queryClient?: QueryClient,
+): void
+```
+
+## Type Parameters
+
+- `TQueryFnData` - The type of data returned by the query function
+- `TError` - The type of error that can be thrown (defaults to `DefaultError`)
+- `TData` - The type of data returned after transformation (defaults to `TQueryFnData`)
+- `TQueryKey` - The type of the query key (defaults to `QueryKey`)
+
+## Parameters
+
+### options
+
+Type: `UsePrefetchQueryOptions<TQueryFnData, TError, TData, TQueryKey>`
+
+The prefetch query configuration object. Accepts most `FetchQueryOptions` properties:
+
+#### queryKey
+
+- **Type:** `TQueryKey`
+- **Required:** Yes
+
+A unique identifier for the query.
+
+```tsx
+queryKey: ['todos']
+queryKey: ['todo', todoId]
+```
+
+#### queryFn
+
+- **Type:** `QueryFunction<TQueryFnData, TQueryKey>`
+- **Required:** Yes
+
+The function that the query will use to request data. **Note:** `skipToken` is not allowed with `usePrefetchQuery`.
+
+```tsx
+queryFn: async () => {
+  const response = await fetch('/api/todos')
+  return response.json()
+}
+```
+
+#### staleTime
+
+- **Type:** `number | ((query: Query) => number)`
+- **Optional**
+
+The time in milliseconds after data is considered stale.
+
+#### gcTime
+
+- **Type:** `number | Infinity`
+- **Optional**
+
+The time in milliseconds that unused/inactive cache data remains in memory.
+
+### queryClient
+
+- **Type:** `QueryClient`
+- **Optional**
+
+A custom QueryClient instance. If not provided, the client from the nearest QueryClientProvider will be used.
+
+## Returns
+
+Type: `void`
+
+This hook does not return anything. It only triggers a prefetch if the query data doesn't already exist in the cache.
+
+## Behavior
+
+- Only prefetches if the query data does not already exist in the cache
+- Does not create a subscription to the query
+- Does not cause the component to re-render when data is fetched
+- Useful for prefetching data for routes or components that will be rendered soon
+
+## Examples
+
+### Basic Prefetch
+
+```tsx
+import { usePrefetchQuery } from '@tanstack/react-query'
+
+function HomePage() {
+  // Prefetch the todos query for the Todos page
+  usePrefetchQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+  })
+
+  return (
+    <div>
+      <h1>Home Page</h1>
+      <Link to="/todos">View Todos</Link>
+    </div>
+  )
+}
+```
+
+### Prefetch on Hover
+
+```tsx
+import { usePrefetchQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
+
+function Navigation() {
+  const [shouldPrefetch, setShouldPrefetch] = useState(false)
+
+  // Only prefetch when hovering over the link
+  if (shouldPrefetch) {
+    usePrefetchQuery({
+      queryKey: ['todos'],
+      queryFn: fetchTodos,
+    })
+  }
+
+  return (
+    <Link
+      to="/todos"
+      onMouseEnter={() => setShouldPrefetch(true)}
+    >
+      Todos
+    </Link>
+  )
+}
+```
+
+### Conditional Prefetch
+
+```tsx
+import { usePrefetchQuery } from '@tanstack/react-query'
+
+function UserProfile({ userId, shouldPrefetchPosts }: Props) {
+  // Conditionally prefetch user's posts
+  if (shouldPrefetchPosts) {
+    usePrefetchQuery({
+      queryKey: ['posts', userId],
+      queryFn: () => fetchUserPosts(userId),
+    })
+  }
+
+  return <div>{/* User profile content */}</div>
+}
+```
+
+### Prefetch with Options
+
+```tsx
+import { usePrefetchQuery } from '@tanstack/react-query'
+
+function Dashboard() {
+  // Prefetch with custom staleTime
+  usePrefetchQuery({
+    queryKey: ['analytics'],
+    queryFn: fetchAnalytics,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+  })
+
+  return <div>{/* Dashboard content */}</div>
+}
+```
+
+### Prefetch Multiple Queries
+
+```tsx
+import { usePrefetchQuery } from '@tanstack/react-query'
+
+function HomePage() {
+  // Prefetch multiple queries
+  usePrefetchQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+  })
+
+  usePrefetchQuery({
+    queryKey: ['users'],
+    queryFn: fetchUsers,
+  })
+
+  usePrefetchQuery({
+    queryKey: ['settings'],
+    queryFn: fetchSettings,
+  })
+
+  return <div>Home Page</div>
+}
+```
+
+### Prefetch with Variables
+
+```tsx
+import { usePrefetchQuery } from '@tanstack/react-query'
+
+function UserCard({ userId }: { userId: number }) {
+  // Prefetch this specific user's posts
+  usePrefetchQuery({
+    queryKey: ['posts', userId],
+    queryFn: () => fetchUserPosts(userId),
+  })
+
+  return (
+    <div>
+      <h2>User {userId}</h2>
+      <Link to={`/users/${userId}/posts`}>View Posts</Link>
+    </div>
+  )
+}
+```
+
+### Use in Route Loaders
+
+```tsx
+import { usePrefetchQuery } from '@tanstack/react-query'
+
+function TodosLayout() {
+  // Prefetch todos for child routes
+  usePrefetchQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+  })
+
+  return (
+    <div>
+      <nav>{/* Navigation */}</nav>
+      <Outlet />
+    </div>
+  )
+}
+```
+
+### Smart Prefetching Based on User Behavior
+
+```tsx
+import { usePrefetchQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+
+function ProductList() {
+  const [hoveredProductId, setHoveredProductId] = useState<number | null>(null)
+
+  // Prefetch product details when user hovers over a product
+  if (hoveredProductId !== null) {
+    usePrefetchQuery({
+      queryKey: ['product', hoveredProductId],
+      queryFn: () => fetchProduct(hoveredProductId),
+    })
+  }
+
+  return (
+    <div>
+      {products.map((product) => (
+        <div
+          key={product.id}
+          onMouseEnter={() => setHoveredProductId(product.id)}
+          onMouseLeave={() => setHoveredProductId(null)}
+        >
+          <Link to={`/products/${product.id}`}>{product.name}</Link>
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+## Notes
+
+- This hook only prefetches if the query doesn't already exist in the cache
+- If you need more control over prefetching, use `queryClient.prefetchQuery()` directly
+- The hook is designed to be called during render, making it safe to use conditionally
+- Prefetched data follows the same caching rules as regular queries

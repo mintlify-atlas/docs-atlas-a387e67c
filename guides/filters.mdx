@@ -1,0 +1,498 @@
+---
+title: Query and Mutation Filters
+description: Filter queries and mutations for invalidation, cancellation, and data management
+---
+
+## Overview
+
+Filters allow you to precisely target queries and mutations for operations like invalidation, cancellation, refetching, and removal. TanStack Query provides a powerful filtering system based on query keys, status, and custom predicates.
+
+## Query Filters
+
+Query filters accept multiple criteria:
+
+```tsx
+interface QueryFilters {
+  /**
+   * Include queries matching this query key
+   */
+  queryKey?: QueryKey
+  /**
+   * Match query key exactly
+   */
+  exact?: boolean
+  /**
+   * Filter to active queries, inactive queries or all queries
+   */
+  type?: 'all' | 'active' | 'inactive'
+  /**
+   * Include or exclude stale queries
+   */
+  stale?: boolean
+  /**
+   * Include queries matching their fetchStatus
+   */
+  fetchStatus?: 'fetching' | 'paused' | 'idle'
+  /**
+   * Include queries matching this predicate function
+   */
+  predicate?: (query: Query) => boolean
+}
+```
+
+## Filtering by Query Key
+
+### Prefix Matching (Default)
+
+By default, filters use prefix matching:
+
+```tsx
+import { useQueryClient } from '@tanstack/react-query'
+
+const queryClient = useQueryClient()
+
+// Matches: ['todos'], ['todos', 1], ['todos', 2, 'comments']
+queryClient.invalidateQueries({ queryKey: ['todos'] })
+
+// Matches: ['todos', 1], ['todos', 1, 'comments']
+queryClient.invalidateQueries({ queryKey: ['todos', 1] })
+```
+
+### Exact Matching
+
+Use `exact: true` for precise matching:
+
+```tsx
+// Only matches: ['todos']
+// Does NOT match: ['todos', 1]
+queryClient.invalidateQueries({ 
+  queryKey: ['todos'],
+  exact: true 
+})
+
+// Only matches: ['todos', 1]
+// Does NOT match: ['todos'] or ['todos', 1, 'comments']
+queryClient.invalidateQueries({ 
+  queryKey: ['todos', 1],
+  exact: true 
+})
+```
+
+## Filtering by Type
+
+Filter queries by active/inactive state:
+
+```tsx
+// Only invalidate active queries (have observers)
+queryClient.invalidateQueries({ 
+  queryKey: ['todos'],
+  type: 'active' 
+})
+
+// Only invalidate inactive queries (no observers)
+queryClient.invalidateQueries({ 
+  queryKey: ['todos'],
+  type: 'inactive' 
+})
+
+// Invalidate all queries (default)
+queryClient.invalidateQueries({ 
+  queryKey: ['todos'],
+  type: 'all' 
+})
+```
+
+## Filtering by Stale Status
+
+```tsx
+// Only invalidate stale queries
+queryClient.invalidateQueries({ 
+  queryKey: ['todos'],
+  stale: true 
+})
+
+// Only invalidate fresh queries
+queryClient.invalidateQueries({ 
+  queryKey: ['todos'],
+  stale: false 
+})
+```
+
+## Filtering by Fetch Status
+
+```tsx
+// Cancel all currently fetching queries
+queryClient.cancelQueries({ 
+  fetchStatus: 'fetching' 
+})
+
+// Get count of paused queries
+const pausedCount = queryClient.isFetching({ 
+  fetchStatus: 'paused' 
+})
+```
+
+## Predicate Functions
+
+Use predicates for complex filtering:
+
+```tsx
+import { useQueryClient } from '@tanstack/react-query'
+
+const queryClient = useQueryClient()
+
+// Invalidate queries older than 1 hour
+queryClient.invalidateQueries({
+  predicate: (query) => {
+    return Date.now() - query.state.dataUpdatedAt > 1000 * 60 * 60
+  },
+})
+
+// Invalidate failed queries
+queryClient.invalidateQueries({
+  predicate: (query) => {
+    return query.state.status === 'error'
+  },
+})
+
+// Invalidate queries with specific meta
+queryClient.invalidateQueries({
+  predicate: (query) => {
+    return query.meta?.invalidateOnFocus === true
+  },
+})
+```
+
+## How Filter Matching Works
+
+The `matchQuery` function implements the filtering logic:
+
+```tsx
+// From utils.ts (simplified)
+export function matchQuery(
+  filters: QueryFilters,
+  query: Query,
+): boolean {
+  const { type = 'all', exact, fetchStatus, predicate, queryKey, stale } = filters
+
+  // Match query key
+  if (queryKey) {
+    if (exact) {
+      if (query.queryHash !== hashQueryKeyByOptions(queryKey, query.options)) {
+        return false
+      }
+    } else if (!partialMatchKey(query.queryKey, queryKey)) {
+      return false
+    }
+  }
+
+  // Match type (active/inactive)
+  if (type !== 'all') {
+    const isActive = query.isActive()
+    if (type === 'active' && !isActive) return false
+    if (type === 'inactive' && isActive) return false
+  }
+
+  // Match stale
+  if (typeof stale === 'boolean' && query.isStale() !== stale) {
+    return false
+  }
+
+  // Match fetch status
+  if (fetchStatus && fetchStatus !== query.state.fetchStatus) {
+    return false
+  }
+
+  // Match predicate
+  if (predicate && !predicate(query)) {
+    return false
+  }
+
+  return true
+}
+```
+
+## Mutation Filters
+
+Mutations can also be filtered:
+
+```tsx
+interface MutationFilters {
+  /**
+   * Include mutations matching this mutation key
+   */
+  mutationKey?: MutationKey
+  /**
+   * Match mutation key exactly
+   */
+  exact?: boolean
+  /**
+   * Filter by mutation status
+   */
+  status?: 'idle' | 'pending' | 'error' | 'success'
+  /**
+   * Include mutations matching this predicate function
+   */
+  predicate?: (mutation: Mutation) => boolean
+}
+```
+
+### Examples
+
+```tsx
+import { useQueryClient } from '@tanstack/react-query'
+
+const queryClient = useQueryClient()
+
+// Get all pending mutations
+const pendingMutations = queryClient
+  .getMutationCache()
+  .findAll({ status: 'pending' })
+
+// Cancel specific mutations
+queryClient.getMutationCache().findAll({ 
+  mutationKey: ['updateTodo'],
+  predicate: (mutation) => mutation.state.variables?.id === 1
+}).forEach(mutation => mutation.cancel())
+```
+
+## Common Filter Patterns
+
+### Invalidate All Queries
+
+```tsx
+// Invalidate everything
+queryClient.invalidateQueries()
+```
+
+### Invalidate Queries by Entity
+
+```tsx
+// Invalidate all todo-related queries
+queryClient.invalidateQueries({ queryKey: ['todos'] })
+
+// Invalidate specific todo
+queryClient.invalidateQueries({ queryKey: ['todos', todoId] })
+
+// Invalidate all except one
+queryClient.invalidateQueries({
+  queryKey: ['todos'],
+  predicate: (query) => {
+    const [, id] = query.queryKey
+    return id !== excludedId
+  },
+})
+```
+
+### Refetch Active Queries
+
+```tsx
+// Refetch only active queries
+queryClient.refetchQueries({ 
+  type: 'active' 
+})
+
+// Refetch active queries for specific key
+queryClient.refetchQueries({ 
+  queryKey: ['todos'],
+  type: 'active' 
+})
+```
+
+### Remove Inactive Queries
+
+```tsx
+// Clean up inactive queries
+queryClient.removeQueries({ 
+  type: 'inactive' 
+})
+
+// Remove inactive queries older than 10 minutes
+queryClient.removeQueries({
+  type: 'inactive',
+  predicate: (query) => {
+    return Date.now() - query.state.dataUpdatedAt > 1000 * 60 * 10
+  },
+})
+```
+
+### Cancel Queries
+
+```tsx
+// Cancel all fetching queries
+await queryClient.cancelQueries({ 
+  fetchStatus: 'fetching' 
+})
+
+// Cancel specific query
+await queryClient.cancelQueries({ 
+  queryKey: ['todos', todoId] 
+})
+```
+
+## Using Filters with Hooks
+
+### useIsFetching
+
+```tsx
+import { useIsFetching } from '@tanstack/react-query'
+
+function GlobalLoadingIndicator() {
+  // Count all fetching queries
+  const fetchingCount = useIsFetching()
+
+  // Count fetching todos
+  const todosFetching = useIsFetching({ queryKey: ['todos'] })
+
+  // Count paused queries
+  const pausedCount = useIsFetching({ fetchStatus: 'paused' })
+
+  return <div>{fetchingCount} queries fetching...</div>
+}
+```
+
+### useIsMutating
+
+```tsx
+import { useIsMutating } from '@tanstack/react-query'
+
+function MutationStatus() {
+  // Count all pending mutations
+  const mutatingCount = useIsMutating()
+
+  // Count specific mutations
+  const todoMutations = useIsMutating({ mutationKey: ['updateTodo'] })
+
+  return <div>{mutatingCount} mutations in progress...</div>
+}
+```
+
+## Advanced Filter Examples
+
+### Invalidate Related Queries
+
+```tsx
+// After updating a todo, invalidate related queries
+const mutation = useMutation({
+  mutationFn: updateTodo,
+  onSuccess: (data) => {
+    // Invalidate the specific todo
+    queryClient.invalidateQueries({ 
+      queryKey: ['todos', data.id] 
+    })
+    
+    // Invalidate the todo list
+    queryClient.invalidateQueries({ 
+      queryKey: ['todos'],
+      exact: true 
+    })
+    
+    // Invalidate any queries that include this todo
+    queryClient.invalidateQueries({
+      predicate: (query) => {
+        return query.queryKey.includes(data.id)
+      },
+    })
+  },
+})
+```
+
+### Smart Cache Management
+
+```tsx
+import { useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+
+function useCacheCleanup() {
+  const queryClient = useQueryClient()
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Remove stale, inactive queries older than 5 minutes
+      queryClient.removeQueries({
+        type: 'inactive',
+        stale: true,
+        predicate: (query) => {
+          return Date.now() - query.state.dataUpdatedAt > 1000 * 60 * 5
+        },
+      })
+    }, 1000 * 60) // Run every minute
+
+    return () => clearInterval(interval)
+  }, [queryClient])
+}
+```
+
+### Conditional Refetch
+
+```tsx
+// Refetch only if data is stale
+queryClient.refetchQueries({
+  queryKey: ['todos'],
+  stale: true,
+})
+
+// Refetch only active, stale queries
+queryClient.refetchQueries({
+  type: 'active',
+  stale: true,
+})
+```
+
+## Filter Utilities
+
+### Get Queries
+
+```tsx
+// Get all matching queries
+const queries = queryClient.getQueriesData({ queryKey: ['todos'] })
+
+// Get specific query data
+const todoData = queryClient.getQueryData(['todos', 1])
+
+// Get query state
+const queryState = queryClient.getQueryState(['todos', 1])
+```
+
+### Set Queries
+
+```tsx
+// Update all matching queries
+queryClient.setQueriesData(
+  { queryKey: ['todos'] },
+  (old) => ({ ...old, updated: true })
+)
+```
+
+## TypeScript Types
+
+```tsx
+import type { QueryFilters, MutationFilters } from '@tanstack/react-query'
+
+// Typed filters
+const filters: QueryFilters = {
+  queryKey: ['todos'],
+  exact: false,
+  type: 'active',
+  stale: true,
+  fetchStatus: 'fetching',
+  predicate: (query) => query.state.dataUpdatedAt > Date.now() - 5000,
+}
+
+const mutationFilters: MutationFilters = {
+  mutationKey: ['updateTodo'],
+  status: 'pending',
+  predicate: (mutation) => mutation.state.isPaused,
+}
+```
+
+## Best Practices
+
+1. **Use prefix matching** for related queries (default behavior)
+2. **Use exact matching** when you need to target a specific query
+3. **Combine filters** for precise targeting
+4. **Use predicates** for complex filtering logic
+5. **Filter by type** to avoid affecting inactive queries unnecessarily
+6. **Be specific** with query keys to avoid over-invalidation
+7. **Test filters** to ensure they match the intended queries
+8. **Document filter logic** for complex predicates

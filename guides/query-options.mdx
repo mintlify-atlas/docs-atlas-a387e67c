@@ -1,0 +1,333 @@
+---
+title: Query Options
+description: Using the queryOptions helper for better type safety and code organization
+---
+
+The `queryOptions` helper is a type-safe way to define and share query configurations across your application. It provides better TypeScript inference and enables query option reuse.
+
+## Basic Usage
+
+### Defining Query Options
+
+```tsx
+import { queryOptions, useQuery } from '@tanstack/react-query'
+
+const todosQueryOptions = queryOptions({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  staleTime: 5 * 60 * 1000,
+})
+
+function Todos() {
+  const { data } = useQuery(todosQueryOptions)
+  // ...
+}
+```
+
+### Type Safety Benefits
+
+The `queryOptions` helper provides enhanced type inference:
+
+```tsx
+import { queryOptions, useQuery } from '@tanstack/react-query'
+
+type Todo = {
+  id: string
+  text: string
+  completed: boolean
+}
+
+const todoListOptions = queryOptions({
+  queryKey: ['todos'],
+  queryFn: async (): Promise<Todo[]> => {
+    const response = await fetch('/api/todos')
+    return response.json()
+  },
+})
+
+function TodoList() {
+  // data is automatically typed as Todo[] | undefined
+  const { data } = useQuery(todoListOptions)
+  
+  return (
+    <ul>
+      {data?.map(todo => (
+        <li key={todo.id}>{todo.text}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+## Sharing Query Options
+
+### Centralized Query Definitions
+
+Create a central file for your query options:
+
+```tsx
+// queries/todos.ts
+import { queryOptions } from '@tanstack/react-query'
+
+export type Todo = {
+  id: string
+  text: string
+  completed: boolean
+}
+
+export const todoListOptions = queryOptions({
+  queryKey: ['todos'],
+  queryFn: async (): Promise<Todo[]> => {
+    const response = await fetch('/api/todos')
+    if (!response.ok) throw new Error('Failed to fetch todos')
+    return response.json()
+  },
+  staleTime: 5 * 60 * 1000,
+})
+
+export const todoOptions = (id: string) =>
+  queryOptions({
+    queryKey: ['todo', id],
+    queryFn: async (): Promise<Todo> => {
+      const response = await fetch(`/api/todos/${id}`)
+      if (!response.ok) throw new Error('Failed to fetch todo')
+      return response.json()
+    },
+  })
+```
+
+### Using Across Components
+
+```tsx
+// components/TodoList.tsx
+import { useQuery } from '@tanstack/react-query'
+import { todoListOptions } from '../queries/todos'
+
+export function TodoList() {
+  const { data, isLoading } = useQuery(todoListOptions)
+  
+  if (isLoading) return <div>Loading...</div>
+  
+  return (
+    <ul>
+      {data?.map(todo => <li key={todo.id}>{todo.text}</li>)}
+    </ul>
+  )
+}
+```
+
+```tsx
+// components/TodoDetail.tsx
+import { useQuery } from '@tanstack/react-query'
+import { todoOptions } from '../queries/todos'
+
+export function TodoDetail({ id }: { id: string }) {
+  const { data } = useQuery(todoOptions(id))
+  
+  return <div>{data?.text}</div>
+}
+```
+
+## Advanced Patterns
+
+### Factory Functions
+
+Create factory functions for dynamic query options:
+
+```tsx
+import { queryOptions } from '@tanstack/react-query'
+
+type User = {
+  id: string
+  name: string
+  email: string
+}
+
+const userQueries = {
+  all: () => queryOptions({
+    queryKey: ['users'],
+    queryFn: async (): Promise<User[]> => {
+      const response = await fetch('/api/users')
+      return response.json()
+    },
+  }),
+  
+  byId: (userId: string) => queryOptions({
+    queryKey: ['users', userId],
+    queryFn: async (): Promise<User> => {
+      const response = await fetch(`/api/users/${userId}`)
+      return response.json()
+    },
+  }),
+  
+  byDepartment: (department: string) => queryOptions({
+    queryKey: ['users', 'department', department],
+    queryFn: async (): Promise<User[]> => {
+      const response = await fetch(`/api/users?department=${department}`)
+      return response.json()
+    },
+  }),
+}
+
+// Usage
+function UserProfile({ userId }: { userId: string }) {
+  const { data } = useQuery(userQueries.byId(userId))
+  return <div>{data?.name}</div>
+}
+```
+
+### Composing Query Options
+
+Extend and compose query options:
+
+```tsx
+import { queryOptions } from '@tanstack/react-query'
+
+const baseProjectOptions = queryOptions({
+  queryKey: ['projects'],
+  queryFn: fetchProjects,
+  staleTime: 60 * 1000,
+})
+
+// Extend with additional options
+const liveProjectOptions = queryOptions({
+  ...baseProjectOptions,
+  refetchInterval: 5000, // Poll every 5 seconds
+  refetchIntervalInBackground: true,
+})
+
+function LiveProjects() {
+  const { data } = useQuery(liveProjectOptions)
+  // Automatically refetches every 5 seconds
+}
+```
+
+### With Select and Transform
+
+Use `select` to transform data:
+
+```tsx
+import { queryOptions, useQuery } from '@tanstack/react-query'
+
+type Todo = {
+  id: string
+  text: string
+  completed: boolean
+}
+
+const todoListOptions = queryOptions({
+  queryKey: ['todos'],
+  queryFn: async (): Promise<Todo[]> => {
+    const response = await fetch('/api/todos')
+    return response.json()
+  },
+})
+
+// Select only completed todos
+function CompletedTodos() {
+  const { data } = useQuery({
+    ...todoListOptions,
+    select: (todos) => todos.filter(todo => todo.completed),
+  })
+  
+  return (
+    <ul>
+      {data?.map(todo => <li key={todo.id}>{todo.text}</li>)}
+    </ul>
+  )
+}
+```
+
+## Working with Mutations
+
+### Accessing Query Data in Mutations
+
+Use query options to access cached data during mutations:
+
+```tsx
+import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query'
+
+const todoListOptions = queryOptions({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+})
+
+function TodoForm() {
+  const queryClient = useQueryClient()
+  
+  const addTodoMutation = useMutation({
+    mutationFn: addTodo,
+    onMutate: async (newTodo) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries(todoListOptions)
+      
+      // Get previous value
+      const previousTodos = queryClient.getQueryData(todoListOptions.queryKey)
+      
+      // Optimistically update
+      queryClient.setQueryData(todoListOptions.queryKey, (old) => [
+        ...old,
+        newTodo,
+      ])
+      
+      return { previousTodos }
+    },
+    onError: (err, newTodo, context) => {
+      // Rollback on error
+      queryClient.setQueryData(
+        todoListOptions.queryKey,
+        context.previousTodos
+      )
+    },
+    onSettled: () => {
+      // Refetch after mutation
+      queryClient.invalidateQueries(todoListOptions)
+    },
+  })
+}
+```
+
+## Prefetching with Query Options
+
+Prefetch data using shared query options:
+
+```tsx
+import { queryOptions, useQuery, useQueryClient } from '@tanstack/react-query'
+
+const userOptions = (id: string) => queryOptions({
+  queryKey: ['user', id],
+  queryFn: () => fetchUser(id),
+})
+
+function UserList({ users }: { users: { id: string }[] }) {
+  const queryClient = useQueryClient()
+  
+  return (
+    <ul>
+      {users.map(user => (
+        <li
+          key={user.id}
+          onMouseEnter={() => {
+            // Prefetch user details on hover
+            queryClient.prefetchQuery(userOptions(user.id))
+          }}
+        >
+          {user.id}
+        </li>
+      ))}
+    </ul>
+  )
+}
+```
+
+## Benefits Summary
+
+1. **Type Safety**: Automatic TypeScript inference for query data
+2. **Reusability**: Share query configurations across components
+3. **Consistency**: Single source of truth for query definitions
+4. **Refactoring**: Easy to update query logic in one place
+5. **Testing**: Simpler to mock and test query configurations
+
+<Warning>
+  **Note**: The `queryOptions` helper is a simple identity function that returns the options you pass to it. Its primary purpose is to improve TypeScript inference and code organization, not to add runtime behavior.
+</Warning>

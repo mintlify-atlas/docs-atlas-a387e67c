@@ -1,0 +1,526 @@
+---
+title: TypeScript
+description: TypeScript usage, type inference, and type safety with TanStack Query
+---
+
+## Overview
+
+TanStack Query is written in TypeScript and provides excellent type safety out of the box. The library automatically infers types from your query and mutation functions, providing full autocomplete and type checking.
+
+## Type Inference
+
+### Automatic Type Inference
+
+TanStack Query automatically infers types from your query function:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+interface Post {
+  id: number
+  title: string
+  body: string
+}
+
+function usePosts() {
+  return useQuery({
+    queryKey: ['posts'],
+    queryFn: async (): Promise<Post[]> => {
+      const response = await fetch('/api/posts')
+      return response.json()
+    },
+  })
+}
+
+// TypeScript knows data is Post[] | undefined
+const { data } = usePosts()
+data?.[0].title // ✅ TypeScript knows this exists
+```
+
+### Generic Type Parameters
+
+You can explicitly provide type parameters:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+import type { UseQueryResult } from '@tanstack/react-query'
+
+function usePosts(): UseQueryResult<Post[], Error> {
+  return useQuery<Post[], Error>({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+  })
+}
+```
+
+Full generic signature:
+
+```tsx
+useQuery<
+  TQueryFnData,  // Type returned by queryFn
+  TError,        // Error type
+  TData,         // Type of data property (after select)
+  TQueryKey      // Query key type
+>(options)
+```
+
+## Query Types
+
+### UseQueryOptions
+
+```tsx
+import type { UseQueryOptions } from '@tanstack/react-query'
+
+const options: UseQueryOptions<Post[], Error> = {
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  staleTime: 5000,
+  gcTime: 10000,
+}
+
+const { data } = useQuery(options)
+```
+
+### UseQueryResult
+
+```tsx
+import type { UseQueryResult } from '@tanstack/react-query'
+
+const query: UseQueryResult<Post[], Error> = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+})
+
+// All properties are properly typed
+query.data      // Post[] | undefined
+query.error     // Error | null
+query.isLoading // boolean
+query.isSuccess // boolean
+```
+
+## Mutation Types
+
+### UseMutationOptions
+
+```tsx
+import { useMutation } from '@tanstack/react-query'
+import type { UseMutationOptions } from '@tanstack/react-query'
+
+interface CreatePostData {
+  title: string
+  body: string
+}
+
+interface CreatePostResponse {
+  id: number
+  title: string
+  body: string
+}
+
+const options: UseMutationOptions<
+  CreatePostResponse, // TData - response type
+  Error,              // TError - error type
+  CreatePostData,     // TVariables - input type
+  { previousPosts?: Post[] } // TContext - onMutate return type
+> = {
+  mutationFn: (data) => createPost(data),
+  onMutate: async (newPost) => {
+    const previousPosts = queryClient.getQueryData(['posts'])
+    return { previousPosts }
+  },
+  onError: (err, variables, context) => {
+    // All parameters are properly typed
+  },
+}
+
+const mutation = useMutation(options)
+```
+
+## Type-Safe Query Keys
+
+### Using Data Tags
+
+You can tag query keys with types:
+
+```tsx
+import { dataTagSymbol } from '@tanstack/react-query'
+import type { DataTag } from '@tanstack/react-query'
+
+// Create a typed query key
+const postKeys = {
+  all: [{ scope: 'posts' }] as const,
+  lists: () => [{ ...postKeys.all[0], entity: 'list' }] as const,
+  list: (filters: string) => 
+    [{ ...postKeys.lists()[0], filters }] as const,
+  details: () => [{ ...postKeys.all[0], entity: 'detail' }] as const,
+  detail: (id: number) => 
+    [{ ...postKeys.details()[0], id }] as const,
+}
+
+// Use typed keys
+const { data } = useQuery({
+  queryKey: postKeys.detail(1),
+  queryFn: ({ queryKey }) => {
+    const [{ id }] = queryKey // TypeScript knows id is a number
+    return fetchPost(id)
+  },
+})
+```
+
+### Query Key Factory
+
+```tsx
+const createQueryKeys = <T extends string>(scope: T) => ({
+  all: [scope] as const,
+  lists: () => [scope, 'list'] as const,
+  list: (filters: Record<string, unknown>) => 
+    [scope, 'list', filters] as const,
+  details: () => [scope, 'detail'] as const,
+  detail: (id: number | string) => 
+    [scope, 'detail', id] as const,
+})
+
+const postKeys = createQueryKeys('posts')
+const userKeys = createQueryKeys('users')
+
+// Fully typed
+const { data } = useQuery({
+  queryKey: postKeys.detail(1),
+  queryFn: fetchPost,
+})
+```
+
+## Select Transform
+
+Type the `select` function for data transformation:
+
+```tsx
+interface Post {
+  id: number
+  title: string
+  body: string
+  userId: number
+}
+
+interface PostTitle {
+  id: number
+  title: string
+}
+
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: (): Promise<Post[]> => fetchPosts(),
+  select: (data): PostTitle[] => {
+    // data is Post[]
+    return data.map(({ id, title }) => ({ id, title }))
+  },
+})
+
+// data is PostTitle[] | undefined
+```
+
+## Infinite Queries
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/react-query'
+import type { UseInfiniteQueryResult } from '@tanstack/react-query'
+
+interface PostsPage {
+  posts: Post[]
+  nextCursor: number | null
+}
+
+const query: UseInfiniteQueryResult<PostsPage, Error> = useInfiniteQuery({
+  queryKey: ['posts'],
+  queryFn: async ({ pageParam }): Promise<PostsPage> => {
+    const response = await fetch(`/api/posts?cursor=${pageParam}`)
+    return response.json()
+  },
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
+
+// query.data.pages is PostsPage[]
+query.data?.pages.forEach((page) => {
+  page.posts // Post[]
+})
+```
+
+## Error Types
+
+### Custom Error Types
+
+```tsx
+class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public code: string,
+  ) {
+    super(message)
+  }
+}
+
+const { data, error } = useQuery<Post[], ApiError>({
+  queryKey: ['posts'],
+  queryFn: async () => {
+    const response = await fetch('/api/posts')
+    if (!response.ok) {
+      throw new ApiError(
+        'Failed to fetch',
+        response.status,
+        'FETCH_ERROR'
+      )
+    }
+    return response.json()
+  },
+})
+
+if (error) {
+  console.log(error.status) // TypeScript knows this exists
+  console.log(error.code)   // TypeScript knows this exists
+}
+```
+
+### Global Error Type
+
+Register a default error type:
+
+```tsx
+import '@tanstack/react-query'
+
+declare module '@tanstack/react-query' {
+  interface Register {
+    defaultError: ApiError
+  }
+}
+
+// Now all queries default to ApiError
+const { error } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+})
+
+// error is ApiError | null
+```
+
+## QueryClient Types
+
+```tsx
+import { QueryClient } from '@tanstack/react-query'
+import type { QueryFilters, InvalidateOptions } from '@tanstack/react-query'
+
+const queryClient = new QueryClient()
+
+// Type-safe query invalidation
+const filters: QueryFilters = {
+  queryKey: ['posts'],
+  exact: false,
+  type: 'active',
+}
+
+const options: InvalidateOptions = {
+  refetchType: 'active',
+}
+
+queryClient.invalidateQueries(filters, options)
+
+// Type-safe data access
+const posts = queryClient.getQueryData<Post[]>(['posts'])
+posts?.[0].title // TypeScript knows this exists
+
+// Type-safe data updates
+queryClient.setQueryData<Post[]>(['posts'], (old) => {
+  // old is Post[] | undefined
+  return old ? [...old, newPost] : [newPost]
+})
+```
+
+## Query Function Context
+
+```tsx
+import type { QueryFunctionContext } from '@tanstack/react-query'
+
+type PostQueryKey = ['posts', { status: string; page: number }]
+
+const fetchPosts = async (
+  context: QueryFunctionContext<PostQueryKey>
+): Promise<Post[]> => {
+  const [, { status, page }] = context.queryKey
+  const { signal } = context
+
+  const response = await fetch(
+    `/api/posts?status=${status}&page=${page}`,
+    { signal }
+  )
+  return response.json()
+}
+
+const { data } = useQuery({
+  queryKey: ['posts', { status: 'published', page: 1 }] as const,
+  queryFn: fetchPosts,
+})
+```
+
+## Utility Types
+
+### QueryKey Type
+
+```tsx
+import type { QueryKey } from '@tanstack/react-query'
+
+// QueryKey is ReadonlyArray<unknown>
+const key: QueryKey = ['posts', 1]
+```
+
+### Extracting Types
+
+```tsx
+import type { UseQueryResult } from '@tanstack/react-query'
+
+type PostsQuery = ReturnType<typeof usePosts>
+// or
+type PostsQuery = UseQueryResult<Post[], Error>
+
+// Extract data type
+type PostsData = PostsQuery['data']
+// Post[] | undefined
+```
+
+## Strict Mode
+
+```tsx
+// Enable strict typing for query keys
+interface Register {
+  queryKey: readonly [string, ...unknown[]]
+}
+
+// Now query keys must start with a string
+const { data } = useQuery({
+  queryKey: ['posts', 1], // ✅ Valid
+  queryFn: fetchPosts,
+})
+
+const { data } = useQuery({
+  queryKey: [1, 'posts'], // ❌ Type error
+  queryFn: fetchPosts,
+})
+```
+
+## Type Helpers
+
+### Creating Type-Safe Hooks
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+import type { UseQueryOptions, UseQueryResult } from '@tanstack/react-query'
+
+function createQueryHook<TData, TError = Error>(
+  key: string,
+  fetcher: () => Promise<TData>,
+  options?: Omit<UseQueryOptions<TData, TError>, 'queryKey' | 'queryFn'>
+) {
+  return (): UseQueryResult<TData, TError> => {
+    return useQuery({
+      queryKey: [key],
+      queryFn: fetcher,
+      ...options,
+    })
+  }
+}
+
+// Usage
+const usePosts = createQueryHook<Post[]>('posts', fetchPosts, {
+  staleTime: 5000,
+})
+
+const { data } = usePosts()
+// data is Post[] | undefined
+```
+
+## Query Options Helper
+
+```tsx
+import { queryOptions } from '@tanstack/react-query'
+
+const postOptions = queryOptions({
+  queryKey: ['posts'],
+  queryFn: async (): Promise<Post[]> => {
+    const response = await fetch('/api/posts')
+    return response.json()
+  },
+  staleTime: 5000,
+})
+
+// Reuse with full type inference
+const { data } = useQuery(postOptions)
+const prefetch = () => queryClient.prefetchQuery(postOptions)
+```
+
+## Best Practices
+
+1. **Let TypeScript infer** - Avoid explicit types when inference works
+2. **Type query functions** - Always type the return value of query functions
+3. **Use const assertions** - For query keys: `['posts', 1] as const`
+4. **Register global types** - Use module augmentation for defaults
+5. **Type context** - Always type mutation context for rollback safety
+6. **Use query options** - For reusable, type-safe query configurations
+7. **Avoid any** - Use proper types or unknown instead
+8. **Type errors** - Create custom error classes with proper types
+
+## Common Type Patterns
+
+### Dependent Queries
+
+```tsx
+function usePost(id: number | undefined) {
+  return useQuery({
+    queryKey: ['posts', id],
+    queryFn: () => fetchPost(id!),
+    enabled: !!id,
+  })
+}
+```
+
+### Conditional Query Keys
+
+```tsx
+type PostFilters = { status?: string; author?: string }
+
+function useFilteredPosts(filters: PostFilters) {
+  return useQuery({
+    queryKey: ['posts', filters] as const,
+    queryFn: ({ queryKey }) => {
+      const [, filters] = queryKey
+      return fetchPosts(filters)
+    },
+  })
+}
+```
+
+### Type-Safe Optimistic Updates
+
+```tsx
+const mutation = useMutation<
+  Post,           // Response
+  Error,          // Error
+  Partial<Post>,  // Variables
+  { previous: Post[] | undefined } // Context
+>({
+  mutationFn: updatePost,
+  onMutate: async (newPost) => {
+    const previous = queryClient.getQueryData<Post[]>(['posts'])
+    
+    queryClient.setQueryData<Post[]>(['posts'], (old) => {
+      return old?.map((post) => 
+        post.id === newPost.id ? { ...post, ...newPost } : post
+      )
+    })
+    
+    return { previous }
+  },
+  onError: (err, newPost, context) => {
+    queryClient.setQueryData(['posts'], context?.previous)
+  },
+})
+```

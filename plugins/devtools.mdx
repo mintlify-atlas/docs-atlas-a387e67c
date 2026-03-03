@@ -1,0 +1,237 @@
+---
+title: TanStack Query Devtools
+description: Debug and visualize your TanStack Query cache with dedicated developer tools
+---
+
+TanStack Query comes with dedicated devtools that help you visualize all the inner workings of the library and will save you hours of debugging.
+
+## Installation
+
+The devtools are a separate package that you need to install:
+
+```bash
+npm install @tanstack/react-query-devtools
+# or
+pnpm add @tanstack/react-query-devtools
+# or
+yarn add @tanstack/react-query-devtools
+# or
+bun add @tanstack/react-query-devtools
+```
+
+<Note>
+For Next.js 13+ App Directory, you must install the devtools as a dev dependency for it to work properly.
+</Note>
+
+<Info>
+By default, React Query Devtools are only included in bundles when `process.env.NODE_ENV === 'development'`, so you don't need to worry about excluding them during a production build.
+</Info>
+
+## Browser Extensions
+
+For Chrome, Firefox, and Edge users, third-party browser extensions are available:
+
+- **Chrome**: [TanStack Query Devtools for Chrome](https://chromewebstore.google.com/detail/tanstack-query-devtools/annajfchloimdhceglpgglpeepfghfai)
+- **Firefox**: [TanStack Query Devtools for Firefox](https://addons.mozilla.org/en-US/firefox/addon/tanstack-query-devtools/)
+- **Edge**: [TanStack Query Devtools for Edge](https://microsoftedge.microsoft.com/addons/detail/tanstack-query-devtools/edmdpkgkacmjopodhfolmphdenmddobj)
+
+For React Native users, check out [rn-better-dev-tools](https://github.com/LovesWorking/rn-better-dev-tools) for debugging across devices.
+
+## Floating Mode
+
+Floating Mode mounts the devtools as a fixed, floating element in your app with a toggle button in the corner of the screen. The toggle state is stored in localStorage and persists across reloads.
+
+Place the following code as high in your React app as possible:
+
+```tsx
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      {/* The rest of your application */}
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
+  )
+}
+```
+
+### Floating Mode Options
+
+<ParamField path="initialIsOpen" type="boolean" default={false}>
+  Set this to `true` if you want the devtools to default to being open.
+</ParamField>
+
+<ParamField path="buttonPosition" type="string" default="bottom-right">
+  The position of the TanStack Query logo to open and close the devtools panel.
+  
+  Options: `"top-left"` | `"top-right"` | `"bottom-left"` | `"bottom-right"` | `"relative"`
+  
+  If `"relative"`, the button is placed where you render the devtools.
+</ParamField>
+
+<ParamField path="position" type="string" default="bottom">
+  The position of the devtools panel.
+  
+  Options: `"top"` | `"bottom"` | `"left"` | `"right"`
+</ParamField>
+
+<ParamField path="client" type="QueryClient">
+  Use this to provide a custom QueryClient. Otherwise, the one from the nearest context will be used.
+</ParamField>
+
+<ParamField path="errorTypes" type="array">
+  Predefine errors that can be triggered on your queries from the UI.
+  
+  ```tsx
+  errorTypes={[
+    { 
+      name: 'Network Error', 
+      initializer: (query) => new Error('Network error occurred') 
+    }
+  ]}
+  ```
+</ParamField>
+
+<ParamField path="styleNonce" type="string">
+  Pass a nonce to the style tag for Content Security Policy (CSP) compliance.
+</ParamField>
+
+<ParamField path="shadowDOMTarget" type="ShadowRoot">
+  Pass a shadow DOM target to apply styles within the shadow DOM instead of the document head.
+</ParamField>
+
+<ParamField path="hideDisabledQueries" type="boolean" default={false}>
+  Set to `true` to hide disabled queries from the devtools panel.
+</ParamField>
+
+<ParamField path="theme" type="string" default="system">
+  Set the theme of the devtools panel.
+  
+  Options: `"light"` | `"dark"` | `"system"`
+</ParamField>
+
+## Embedded Mode
+
+Embedded mode displays the devtools as a fixed element within your application, allowing you to integrate it into your own development tools.
+
+```tsx
+import { ReactQueryDevtoolsPanel } from '@tanstack/react-query-devtools'
+
+function App() {
+  const [isOpen, setIsOpen] = React.useState(false)
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      {/* The rest of your application */}
+      <button onClick={() => setIsOpen(!isOpen)}>
+        {isOpen ? 'Close' : 'Open'} the devtools panel
+      </button>
+      {isOpen && <ReactQueryDevtoolsPanel onClose={() => setIsOpen(false)} />}
+    </QueryClientProvider>
+  )
+}
+```
+
+### Embedded Mode Options
+
+<ParamField path="style" type="React.CSSProperties">
+  Custom styles for the devtools panel.
+  
+  Default: `{ height: '500px' }`
+</ParamField>
+
+<ParamField path="onClose" type="function">
+  Callback function that is called when the devtools panel is closed.
+</ParamField>
+
+<ParamField path="client" type="QueryClient">
+  Use this to provide a custom QueryClient.
+</ParamField>
+
+<ParamField path="errorTypes" type="array">
+  Predefine errors that can be triggered on your queries.
+</ParamField>
+
+<ParamField path="styleNonce" type="string">
+  Pass a nonce to the style tag for CSP compliance.
+</ParamField>
+
+<ParamField path="shadowDOMTarget" type="ShadowRoot">
+  Pass a shadow DOM target for shadow DOM usage.
+</ParamField>
+
+## Production Usage
+
+Devtools are excluded in production builds by default. However, you can lazy load them in production if needed:
+
+```tsx
+import * as React from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+
+const queryClient = new QueryClient()
+
+const ReactQueryDevtoolsProduction = React.lazy(() =>
+  import('@tanstack/react-query-devtools/production').then((d) => ({
+    default: d.ReactQueryDevtools,
+  })),
+)
+
+function App() {
+  const [showDevtools, setShowDevtools] = React.useState(false)
+
+  React.useEffect(() => {
+    // @ts-expect-error
+    window.toggleDevtools = () => setShowDevtools((old) => !old)
+  }, [])
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Example />
+      <ReactQueryDevtools initialIsOpen />
+      {showDevtools && (
+        <React.Suspense fallback={null}>
+          <ReactQueryDevtoolsProduction />
+        </React.Suspense>
+      )}
+    </QueryClientProvider>
+  )
+}
+```
+
+With this setup, calling `window.toggleDevtools()` will download the devtools bundle and display them.
+
+## Features
+
+### Query Inspection
+
+The devtools allow you to:
+
+- View all queries in your cache
+- See query status (fresh, fetching, stale, inactive)
+- Inspect query data and errors
+- View query metadata and configuration
+- Monitor query fetch times and state changes
+
+### Mutation Tracking
+
+Since version 5, the devtools support observing mutations:
+
+- Track all mutations in your application
+- View mutation status and variables
+- Inspect mutation errors and context
+- Monitor mutation lifecycle
+
+### Interactive Actions
+
+- Manually refetch queries
+- Invalidate queries
+- Reset queries
+- Remove queries from cache
+- Trigger mutations
+- Toggle error states (with custom error types)
+
+### Cache Visualization
+
+Get a real-time view of your cache state and understand how data flows through your application.

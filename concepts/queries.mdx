@@ -1,0 +1,302 @@
+---
+title: Queries
+description: Understanding how queries work in TanStack Query, including basic usage, query states, and lifecycle management
+---
+
+## Overview
+
+Queries are the foundation of TanStack Query. A query is a declarative way to fetch data that is tied to a unique key. Queries automatically manage caching, background updates, and stale data.
+
+## Basic Usage
+
+The most common way to use queries in React is with the `useQuery` hook:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+interface Post {
+  id: number
+  title: string
+  body: string
+}
+
+function Posts() {
+  const { data, error, status, isFetching } = useQuery({
+    queryKey: ['posts'],
+    queryFn: async (): Promise<Post[]> => {
+      const response = await fetch('https://api.example.com/posts')
+      return response.json()
+    },
+  })
+
+  if (status === 'pending') return <div>Loading...</div>
+  if (status === 'error') return <div>Error: {error.message}</div>
+
+  return (
+    <ul>
+      {data.map(post => (
+        <li key={post.id}>{post.title}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+## Query Configuration
+
+Queries accept several configuration options:
+
+<ParamField path="queryKey" type="QueryKey" required>
+  A unique key for the query. Must be an array. Used for caching and refetching.
+  
+  ```ts
+  queryKey: ['posts']
+  queryKey: ['post', postId]
+  queryKey: ['posts', { status: 'published', page: 1 }]
+  ```
+</ParamField>
+
+<ParamField path="queryFn" type="QueryFunction<TData>" required>
+  The function that fetches your data. Must return a Promise that resolves to data or throws an error.
+  
+  Receives a `QueryFunctionContext` with:
+  - `queryKey` - The query key
+  - `signal` - An AbortSignal for request cancellation
+  - `meta` - Optional metadata
+  - `client` - The QueryClient instance
+</ParamField>
+
+<ParamField path="enabled" type="boolean | ((query: Query) => boolean)" default="true">
+  Set to `false` to disable automatic query execution. Useful for dependent queries.
+  
+  ```tsx
+  const { data: user } = useQuery({ queryKey: ['user'], queryFn: fetchUser })
+  
+  // Only fetch posts after we have a user
+  const { data: posts } = useQuery({
+    queryKey: ['posts', user?.id],
+    queryFn: () => fetchUserPosts(user!.id),
+    enabled: !!user,
+  })
+  ```
+</ParamField>
+
+<ParamField path="staleTime" type="number | 'static' | ((query: Query) => number | 'static')" default="0">
+  The time in milliseconds after data is considered stale. 
+  - `0` - Data is immediately stale
+  - `Infinity` - Data never becomes stale
+  - `'static'` - Data never becomes stale and never refetches
+</ParamField>
+
+<ParamField path="gcTime" type="number" default="5 * 60 * 1000 (5 minutes)">
+  The time in milliseconds that unused/inactive cache data remains in memory. When a query's cache becomes unused or inactive, it will be garbage collected after this duration.
+  
+  Set to `Infinity` to disable garbage collection.
+</ParamField>
+
+<ParamField path="retry" type="boolean | number | ((failureCount: number, error: TError) => boolean)" default="3">
+  - `false` - No retries
+  - `true` - Infinite retries
+  - `number` - Retry up to this number of times
+  - `function` - Custom retry logic
+</ParamField>
+
+<ParamField path="retryDelay" type="number | ((attemptIndex: number) => number)" default="exponential backoff">
+  Delay between retry attempts. Defaults to exponential backoff starting at 1000ms.
+</ParamField>
+
+<ParamField path="refetchOnMount" type="boolean | 'always' | ((query: Query) => boolean | 'always')" default="true">
+  If set to `true`, the query will refetch on mount if the data is stale. If set to `'always'`, the query will always refetch on mount.
+</ParamField>
+
+<ParamField path="refetchOnWindowFocus" type="boolean | 'always' | ((query: Query) => boolean | 'always')" default="true">
+  If set to `true`, the query will refetch on window focus if the data is stale.
+</ParamField>
+
+<ParamField path="refetchOnReconnect" type="boolean | 'always' | ((query: Query) => boolean | 'always')" default="true">
+  If set to `true`, the query will refetch on network reconnect if the data is stale.
+</ParamField>
+
+<ParamField path="refetchInterval" type="number | false | ((query: Query) => number | false)" default="false">
+  If set to a number, the query will continuously refetch at this frequency in milliseconds.
+</ParamField>
+
+## Query States
+
+Queries can be in one of the following states:
+
+### Status
+
+The `status` field indicates the overall state of the query:
+
+- **`pending`** - The query has no data and is currently fetching for the first time
+- **`error`** - The query encountered an error
+- **`success`** - The query was successful and has data
+
+```tsx
+if (status === 'pending') return <Spinner />
+if (status === 'error') return <ErrorMessage error={error} />
+// status === 'success'
+return <DataView data={data} />
+```
+
+### Fetch Status
+
+The `fetchStatus` field provides additional information about the fetching state:
+
+- **`fetching`** - The query is currently fetching (initial load or background refetch)
+- **`paused`** - The query wanted to fetch but is paused (usually due to no network connection)
+- **`idle`** - The query is not fetching
+
+<Note>
+  The combination of `status` and `fetchStatus` gives you complete control over UI states:
+  - `status: 'pending'` + `fetchStatus: 'fetching'` - Initial load
+  - `status: 'success'` + `fetchStatus: 'fetching'` - Background refresh
+  - `status: 'success'` + `fetchStatus: 'idle'` - Data is cached and fresh
+</Note>
+
+### Derived States
+
+TanStack Query provides convenient boolean flags derived from `status` and `fetchStatus`:
+
+```tsx
+const {
+  isPending,      // status === 'pending'
+  isError,        // status === 'error'
+  isSuccess,      // status === 'success'
+  isFetching,     // fetchStatus === 'fetching'
+  isPaused,       // fetchStatus === 'paused'
+  isLoading,      // isPending && isFetching
+  isRefetching,   // isFetching && !isPending
+  isFetched,      // Query has been fetched at least once
+  isStale,        // Data is considered stale
+} = useQuery({ ... })
+```
+
+## Query Results
+
+The query result object contains:
+
+```tsx
+interface QueryObserverResult<TData, TError> {
+  data: TData | undefined
+  error: TError | null
+  status: 'pending' | 'error' | 'success'
+  fetchStatus: 'fetching' | 'paused' | 'idle'
+  
+  // Timestamps
+  dataUpdatedAt: number  // When data was last successfully fetched
+  errorUpdatedAt: number // When the error was last updated
+  
+  // Counters
+  failureCount: number      // Number of consecutive failures
+  failureReason: TError | null
+  errorUpdateCount: number  // Total number of errors
+  
+  // Methods
+  refetch: (options?: RefetchOptions) => Promise<QueryObserverResult>
+  
+  // Boolean helpers (derived from status/fetchStatus)
+  isPending: boolean
+  isError: boolean
+  isSuccess: boolean
+  isFetching: boolean
+  isPaused: boolean
+  isLoading: boolean
+  isRefetching: boolean
+  isFetched: boolean
+  isFetchedAfterMount: boolean
+  isLoadingError: boolean
+  isRefetchError: boolean
+  isStale: boolean
+  isPlaceholderData: boolean
+}
+```
+
+## Query Lifecycle
+
+1. **Mount** - Query observer is created and subscribes to the query
+2. **Fetch** - If no cached data or data is stale, query function executes
+3. **Success/Error** - Query state updates with result
+4. **Background Refetch** - Query automatically refetches based on:
+   - Window focus (if `refetchOnWindowFocus` is true)
+   - Network reconnect (if `refetchOnReconnect` is true)
+   - Polling interval (if `refetchInterval` is set)
+   - Manual invalidation
+5. **Unmount** - Observer unsubscribes from query
+6. **Garbage Collection** - After `gcTime`, unused query data is removed from cache
+
+## Important Query Behaviors
+
+<Note>
+  **Query keys must be arrays**: As of v4, query keys must be arrays. If you're using a string like `'posts'`, change it to `['posts']`.
+</Note>
+
+<Note>
+  **Queries return undefined, not errors**: Query functions should never return `undefined`. Always return a value or throw an error. Returning `undefined` will cause an error.
+</Note>
+
+<Note>
+  **Structural sharing**: TanStack Query uses structural sharing to optimize re-renders. If your new data is deeply equal to the old data, the old reference is kept. This can be disabled with `structuralSharing: false`.
+</Note>
+
+<Note>
+  **Automatic request cancellation**: When a query becomes unmounted or unused before the request completes, TanStack Query will automatically cancel the request if the AbortSignal was consumed.
+</Note>
+
+## Advanced Features
+
+### Select Option
+
+Transform or select a portion of the query data:
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  select: (data) => data.filter(post => post.published),
+})
+```
+
+### Placeholder Data
+
+Provide temporary data while the query loads:
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['post', postId],
+  queryFn: () => fetchPost(postId),
+  placeholderData: (previousData, previousQuery) => previousData,
+})
+```
+
+### Initial Data
+
+Seed the query with initial data:
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['post', postId],
+  queryFn: () => fetchPost(postId),
+  initialData: () => {
+    // Get from cache or another source
+    return queryClient.getQueryData(['posts'])?.find(p => p.id === postId)
+  },
+})
+```
+
+## Network Mode
+
+Control how queries behave with network connectivity:
+
+- **`online`** (default) - Only fetch when online
+- **`always`** - Fetch regardless of network status
+- **`offlineFirst`** - Try to fetch but continue if offline
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['posts'],
+  queryFn: fetchPosts,
+  networkMode: 'offlineFirst',
+})
+```

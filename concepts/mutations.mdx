@@ -1,0 +1,387 @@
+---
+title: Mutations
+description: Learn how mutations work in TanStack Query for creating, updating, and deleting data with automatic cache updates
+---
+
+## Overview
+
+Mutations are used to create, update, or delete data. Unlike queries, mutations are typically used to perform side effects and modify server state.
+
+## Basic Usage
+
+Use the `useMutation` hook to perform mutations:
+
+```tsx
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+
+interface Todo {
+  id: number
+  title: string
+  completed: boolean
+}
+
+function TodoForm() {
+  const queryClient = useQueryClient()
+  
+  const mutation = useMutation({
+    mutationFn: async (newTodo: Omit<Todo, 'id'>) => {
+      const response = await fetch('/api/todos', {
+        method: 'POST',
+        body: JSON.stringify(newTodo),
+        headers: { 'Content-Type': 'application/json' },
+      })
+      return response.json()
+    },
+    onSuccess: () => {
+      // Invalidate and refetch
+      queryClient.invalidateQueries({ queryKey: ['todos'] })
+    },
+  })
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    mutation.mutate({ title: 'New Todo', completed: false })
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <button type="submit" disabled={mutation.isPending}>
+        {mutation.isPending ? 'Creating...' : 'Create Todo'}
+      </button>
+      {mutation.isError && <div>Error: {mutation.error.message}</div>}
+    </form>
+  )
+}
+```
+
+## Mutation Configuration
+
+<ParamField path="mutationFn" type="(variables: TVariables, context: MutationFunctionContext) => Promise<TData>" required>
+  The function that performs the mutation. Receives variables passed to `mutate()` and must return a Promise.
+  
+  ```ts
+  mutationFn: async (newTodo) => {
+    const response = await fetch('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify(newTodo),
+    })
+    if (!response.ok) throw new Error('Failed to create todo')
+    return response.json()
+  }
+  ```
+</ParamField>
+
+<ParamField path="mutationKey" type="MutationKey">
+  Optional unique key for the mutation. Useful for tracking mutation state across the app or for shared mutation defaults.
+  
+  ```ts
+  mutationKey: ['createTodo']
+  ```
+</ParamField>
+
+<ParamField path="onMutate" type="(variables: TVariables, context: MutationFunctionContext) => Promise<TContext> | TContext">
+  Called before the mutation function is fired. Useful for optimistic updates. The returned value is passed to `onError` and `onSettled`.
+  
+  ```tsx
+  onMutate: async (newTodo) => {
+    // Cancel outgoing refetches
+    await queryClient.cancelQueries({ queryKey: ['todos'] })
+    
+    // Snapshot previous value
+    const previousTodos = queryClient.getQueryData(['todos'])
+    
+    // Optimistically update
+    queryClient.setQueryData(['todos'], (old) => [...old, newTodo])
+    
+    // Return context with snapshot
+    return { previousTodos }
+  }
+  ```
+</ParamField>
+
+<ParamField path="onSuccess" type="(data: TData, variables: TVariables, context: TContext, mutationContext: MutationFunctionContext) => Promise<unknown> | void">
+  Called when the mutation succeeds. Receives the mutation result, variables, and context from `onMutate`.
+  
+  ```tsx
+  onSuccess: (data, variables, context) => {
+    queryClient.invalidateQueries({ queryKey: ['todos'] })
+    console.log('Todo created:', data)
+  }
+  ```
+</ParamField>
+
+<ParamField path="onError" type="(error: TError, variables: TVariables, context: TContext | undefined, mutationContext: MutationFunctionContext) => Promise<unknown> | void">
+  Called when the mutation encounters an error. Useful for rollback in optimistic updates.
+  
+  ```tsx
+  onError: (error, newTodo, context) => {
+    // Rollback optimistic update
+    if (context?.previousTodos) {
+      queryClient.setQueryData(['todos'], context.previousTodos)
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="onSettled" type="(data: TData | undefined, error: TError | null, variables: TVariables, context: TContext | undefined, mutationContext: MutationFunctionContext) => Promise<unknown> | void">
+  Called when the mutation finishes (either success or error). Runs after `onSuccess` or `onError`.
+  
+  ```tsx
+  onSettled: () => {
+    // Always refetch after mutation, regardless of success or failure
+    queryClient.invalidateQueries({ queryKey: ['todos'] })
+  }
+  ```
+</ParamField>
+
+<ParamField path="retry" type="boolean | number | ((failureCount: number, error: TError) => boolean)" default="0">
+  Number of retry attempts. Defaults to 0 (no retries) unlike queries which retry 3 times.
+</ParamField>
+
+<ParamField path="retryDelay" type="number | ((attemptIndex: number) => number)">
+  Delay between retry attempts in milliseconds.
+</ParamField>
+
+<ParamField path="networkMode" type="'online' | 'always' | 'offlineFirst'" default="'online'">
+  Controls mutation behavior with network connectivity.
+</ParamField>
+
+<ParamField path="gcTime" type="number" default="5 * 60 * 1000 (5 minutes)">
+  Time in milliseconds that unused/inactive mutations remain in memory.
+</ParamField>
+
+## Mutation States
+
+Mutations have four possible states:
+
+- **`idle`** - The mutation is idle and hasn't been executed yet
+- **`pending`** - The mutation is currently running
+- **`error`** - The mutation encountered an error
+- **`success`** - The mutation was successful
+
+```tsx
+const mutation = useMutation({ mutationFn: createTodo })
+
+if (mutation.isIdle) return null
+if (mutation.isPending) return <Spinner />
+if (mutation.isError) return <Error error={mutation.error} />
+if (mutation.isSuccess) return <Success data={mutation.data} />
+```
+
+## Mutation Result
+
+The mutation result object contains:
+
+```tsx
+interface MutationObserverResult<TData, TError, TVariables, TContext> {
+  data: TData | undefined          // The last successfully resolved data
+  error: TError | null             // The error object
+  status: MutationStatus           // 'idle' | 'pending' | 'error' | 'success'
+  variables: TVariables | undefined // Variables passed to mutate()
+  context: TContext | undefined    // Context returned from onMutate
+  
+  // Derived booleans
+  isIdle: boolean
+  isPending: boolean
+  isError: boolean
+  isSuccess: boolean
+  isPaused: boolean
+  
+  // Failure tracking
+  failureCount: number
+  failureReason: TError | null
+  submittedAt: number              // Timestamp when mutation was submitted
+  
+  // Methods
+  mutate: (variables: TVariables, options?: MutateOptions) => void
+  mutateAsync: (variables: TVariables, options?: MutateOptions) => Promise<TData>
+  reset: () => void                // Reset mutation to idle state
+}
+```
+
+## Executing Mutations
+
+### mutate()
+
+The `mutate` function executes the mutation and returns `void`. Errors are caught internally:
+
+```tsx
+const mutation = useMutation({ mutationFn: createTodo })
+
+mutation.mutate(
+  { title: 'New Todo', completed: false },
+  {
+    onSuccess: (data) => {
+      console.log('Created:', data)
+    },
+    onError: (error) => {
+      console.error('Failed:', error)
+    },
+  }
+)
+```
+
+### mutateAsync()
+
+The `mutateAsync` function returns a Promise that you must handle:
+
+```tsx
+const mutation = useMutation({ mutationFn: createTodo })
+
+try {
+  const todo = await mutation.mutateAsync({
+    title: 'New Todo',
+    completed: false,
+  })
+  console.log('Created:', todo)
+} catch (error) {
+  console.error('Failed:', error)
+}
+```
+
+<Note>
+  **Use mutate() in most cases**: Prefer `mutate()` over `mutateAsync()` unless you specifically need to await the result. Using `mutateAsync` can lead to unhandled promise rejections if not properly handled.
+</Note>
+
+## Updating Queries After Mutation
+
+### Invalidation
+
+The most common pattern is to invalidate queries after a mutation:
+
+```tsx
+const mutation = useMutation({
+  mutationFn: createTodo,
+  onSuccess: () => {
+    // Invalidate and refetch all queries with 'todos' key
+    queryClient.invalidateQueries({ queryKey: ['todos'] })
+  },
+})
+```
+
+### Direct Updates
+
+For immediate UI updates, directly update the cache:
+
+```tsx
+const mutation = useMutation({
+  mutationFn: createTodo,
+  onSuccess: (newTodo) => {
+    queryClient.setQueryData(['todos'], (old) => [...old, newTodo])
+  },
+})
+```
+
+### Optimistic Updates
+
+Update the UI immediately, then rollback on error:
+
+```tsx
+const mutation = useMutation({
+  mutationFn: updateTodo,
+  onMutate: async (updatedTodo) => {
+    // Cancel outgoing refetches
+    await queryClient.cancelQueries({ queryKey: ['todos'] })
+    
+    // Snapshot previous value
+    const previousTodos = queryClient.getQueryData(['todos'])
+    
+    // Optimistically update
+    queryClient.setQueryData(['todos'], (old) =>
+      old.map(todo => todo.id === updatedTodo.id ? updatedTodo : todo)
+    )
+    
+    return { previousTodos }
+  },
+  onError: (err, updatedTodo, context) => {
+    // Rollback on error
+    queryClient.setQueryData(['todos'], context.previousTodos)
+  },
+  onSettled: () => {
+    // Always refetch after error or success
+    queryClient.invalidateQueries({ queryKey: ['todos'] })
+  },
+})
+```
+
+## Mutation Side Effects
+
+You can attach callbacks both at the mutation level and per-mutation execution:
+
+```tsx
+// Global callbacks (for all executions)
+const mutation = useMutation({
+  mutationFn: createTodo,
+  onSuccess: (data) => {
+    console.log('Global success:', data)
+  },
+})
+
+// Per-execution callbacks (for specific call)
+mutation.mutate(
+  { title: 'New Todo' },
+  {
+    onSuccess: (data) => {
+      console.log('This execution succeeded:', data)
+    },
+  }
+)
+```
+
+<Note>
+  **Callback execution order**: Both callbacks will fire, in the following order:
+  1. `onMutate` (global)
+  2. `mutationFn`
+  3. `onSuccess` (global)
+  4. `onSuccess` (per-execution)
+  5. `onSettled` (global)
+  6. `onSettled` (per-execution)
+</Note>
+
+## Sequential Mutations
+
+To run mutations one after another:
+
+```tsx
+const createMutation = useMutation({ mutationFn: createTodo })
+const updateMutation = useMutation({ mutationFn: updateTodo })
+
+const handleCreate = async () => {
+  const newTodo = await createMutation.mutateAsync({ title: 'New' })
+  await updateMutation.mutateAsync({ ...newTodo, completed: true })
+}
+```
+
+## Resetting Mutation State
+
+Reset a mutation back to its initial idle state:
+
+```tsx
+const mutation = useMutation({ mutationFn: createTodo })
+
+mutation.mutate({ title: 'New Todo' })
+
+// Later, reset the mutation
+mutation.reset()
+// mutation.status === 'idle'
+// mutation.data === undefined
+// mutation.error === null
+```
+
+## Important Behaviors
+
+<Note>
+  **Mutations don't automatically retry**: Unlike queries, mutations default to `retry: 0`. You must explicitly configure retries if needed.
+</Note>
+
+<Note>
+  **Only one mutation instance at a time**: If you call `mutate()` multiple times before the previous mutation completes, only the variables from the last call will be used, but all callbacks will fire.
+</Note>
+
+<Note>
+  **Mutation state persists**: Mutation state (data, error, status) persists until you either reset it with `reset()` or execute a new mutation.
+</Note>
+
+<Note>
+  **Paused mutations resume on reconnect**: If a mutation starts while offline with `networkMode: 'online'` (default), it will be paused and automatically resume when connectivity is restored.
+</Note>

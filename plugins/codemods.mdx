@@ -1,0 +1,394 @@
+---
+title: Codemods
+description: Automated code migrations to help you upgrade TanStack Query versions with confidence
+---
+
+TanStack Query provides codemods to automate migration between major versions. These codemods help transform your code to match new APIs and patterns.
+
+## What are Codemods?
+
+Codemods are automated code transformation scripts that help you migrate your codebase when APIs change. They use [jscodeshift](https://github.com/facebook/jscodeshift) to parse your code, apply transformations, and maintain your code style.
+
+<Warning>
+  Codemods are a best-effort tool to help with migration. Always review the generated code and test thoroughly. Some edge cases cannot be handled automatically.
+</Warning>
+
+## Installation
+
+Codemods are included with TanStack Query packages, so no additional installation is needed. You'll use `npx jscodeshift` to run them.
+
+## Available Codemods
+
+### v5 Migration Codemods
+
+#### remove-overloads
+
+Converts the old function overloads to the new single-object signature.
+
+**What it does:**
+- Transforms `useQuery(key, fn, options)` → `useQuery({ queryKey, queryFn, ...options })`
+- Transforms `useMutation(fn, options)` → `useMutation({ mutationFn, ...options })`
+- Updates all `queryClient` methods to use object syntax
+
+**JavaScript/JSX:**
+```bash
+npx jscodeshift@latest ./path/to/src/ \
+  --extensions=js,jsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/remove-overloads/remove-overloads.cjs
+```
+
+**TypeScript/TSX:**
+```bash
+npx jscodeshift@latest ./path/to/src/ \
+  --extensions=ts,tsx \
+  --parser=tsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/remove-overloads/remove-overloads.cjs
+```
+
+**Example transformations:**
+
+```tsx
+// Before
+useQuery('todos', fetchTodos, { staleTime: 5000 })
+
+// After
+useQuery({ queryKey: ['todos'], queryFn: fetchTodos, staleTime: 5000 })
+```
+
+```tsx
+// Before
+useMutation(addTodo, {
+  onSuccess: () => {
+    queryClient.invalidateQueries('todos')
+  },
+})
+
+// After
+useMutation({
+  mutationFn: addTodo,
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['todos'] })
+  },
+})
+```
+
+#### keep-previous-data
+
+Replaces `keepPreviousData: true` with `placeholderData: keepPreviousData`.
+
+**What it does:**
+- Adds import for `keepPreviousData` function
+- Replaces the boolean option with the function
+- Updates `isPreviousData` to `isPlaceholderData`
+
+**JavaScript/JSX:**
+```bash
+npx jscodeshift@latest ./path/to/src/ \
+  --extensions=js,jsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/keep-previous-data/keep-previous-data.cjs
+```
+
+**TypeScript/TSX:**
+```bash
+npx jscodeshift@latest ./path/to/src/ \
+  --extensions=ts,tsx \
+  --parser=tsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/keep-previous-data/keep-previous-data.cjs
+```
+
+**Example transformation:**
+
+```tsx
+// Before
+import { useQuery } from '@tanstack/react-query'
+
+const { data, isPreviousData } = useQuery({
+  queryKey: ['projects', page],
+  queryFn: () => fetchProjects(page),
+  keepPreviousData: true,
+})
+
+// After
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
+
+const { data, isPlaceholderData } = useQuery({
+  queryKey: ['projects', page],
+  queryFn: () => fetchProjects(page),
+  placeholderData: keepPreviousData,
+})
+```
+
+#### rename-properties
+
+Renames properties that changed in v5.
+
+**What it does:**
+- Renames `cacheTime` → `gcTime`
+- Renames `useErrorBoundary` → `throwOnError`
+- Renames `status: 'loading'` checks to `status: 'pending'`
+- Updates related type imports
+
+**JavaScript/JSX:**
+```bash
+npx jscodeshift@latest ./path/to/src/ \
+  --extensions=js,jsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/rename-properties/rename-properties.cjs
+```
+
+**TypeScript/TSX:**
+```bash
+npx jscodeshift@latest ./path/to/src/ \
+  --extensions=ts,tsx \
+  --parser=tsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/rename-properties/rename-properties.cjs
+```
+
+**Example transformation:**
+
+```tsx
+// Before
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      cacheTime: 10 * 60 * 1000,
+      useErrorBoundary: true,
+    },
+  },
+})
+
+// After
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      gcTime: 10 * 60 * 1000,
+      throwOnError: true,
+    },
+  },
+})
+```
+
+#### rename-hydrate
+
+Renames the `Hydrate` component to `HydrationBoundary`.
+
+**JavaScript/JSX:**
+```bash
+npx jscodeshift@latest ./path/to/src/ \
+  --extensions=js,jsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/rename-hydrate/rename-hydrate.cjs
+```
+
+**TypeScript/TSX:**
+```bash
+npx jscodeshift@latest ./path/to/src/ \
+  --extensions=ts,tsx \
+  --parser=tsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/rename-hydrate/rename-hydrate.cjs
+```
+
+**Example transformation:**
+
+```tsx
+// Before
+import { Hydrate } from '@tanstack/react-query'
+
+<Hydrate state={dehydratedState}>
+  <App />
+</Hydrate>
+
+// After
+import { HydrationBoundary } from '@tanstack/react-query'
+
+<HydrationBoundary state={dehydratedState}>
+  <App />
+</HydrationBoundary>
+```
+
+#### is-loading
+
+Transforms `isLoading` and `isInitialLoading` usage for v5 semantics.
+
+**What it does:**
+- Renames `isInitialLoading` → `isLoading`
+- Updates `isLoading` → `isPending && isFetching` where appropriate
+
+**JavaScript/JSX:**
+```bash
+npx jscodeshift@latest ./path/to/src/ \
+  --extensions=js,jsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/is-loading/is-loading.cjs
+```
+
+**TypeScript/TSX:**
+```bash
+npx jscodeshift@latest ./path/to/src/ \
+  --extensions=ts,tsx \
+  --parser=tsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/is-loading/is-loading.cjs
+```
+
+### v4 Migration Codemods
+
+#### replace-import-specifier
+
+Updates imports from `react-query` to `@tanstack/react-query`.
+
+**JavaScript/JSX:**
+```bash
+npx jscodeshift@latest ./path/to/src/ \
+  --extensions=js,jsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v4/replace-import-specifier.cjs
+```
+
+**TypeScript/TSX:**
+```bash
+npx jscodeshift@latest ./path/to/src/ \
+  --extensions=ts,tsx \
+  --parser=tsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v4/replace-import-specifier.cjs
+```
+
+**Example transformation:**
+
+```tsx
+// Before
+import { useQuery } from 'react-query'
+import { ReactQueryDevtools } from 'react-query/devtools'
+
+// After
+import { useQuery } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+```
+
+#### key-transformation
+
+Converts string query keys to array format.
+
+**JavaScript/JSX:**
+```bash
+npx jscodeshift@latest ./path/to/src/ \
+  --extensions=js,jsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v4/key-transformation.cjs
+```
+
+**TypeScript/TSX:**
+```bash
+npx jscodeshift@latest ./path/to/src/ \
+  --extensions=ts,tsx \
+  --parser=tsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v4/key-transformation.cjs
+```
+
+**Example transformation:**
+
+```tsx
+// Before
+useQuery('todos', fetchTodos)
+queryClient.invalidateQueries('todos')
+
+// After
+useQuery(['todos'], fetchTodos)
+queryClient.invalidateQueries(['todos'])
+```
+
+## Usage Tips
+
+### Run on Specific Directories
+
+Target specific parts of your codebase:
+
+```bash
+npx jscodeshift@latest ./src/features/todos/ \
+  --extensions=ts,tsx \
+  --parser=tsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/remove-overloads/remove-overloads.cjs
+```
+
+### Dry Run
+
+Test the transformation without modifying files:
+
+```bash
+npx jscodeshift@latest ./src/ \
+  --extensions=ts,tsx \
+  --parser=tsx \
+  --dry \
+  --print \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/remove-overloads/remove-overloads.cjs
+```
+
+### Run Multiple Codemods
+
+For major version migrations, run codemods in sequence:
+
+```bash
+# v5 migration - run all codemods
+npx jscodeshift@latest ./src/ --extensions=ts,tsx --parser=tsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/remove-overloads/remove-overloads.cjs
+
+npx jscodeshift@latest ./src/ --extensions=ts,tsx --parser=tsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/keep-previous-data/keep-previous-data.cjs
+
+npx jscodeshift@latest ./src/ --extensions=ts,tsx --parser=tsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/rename-properties/rename-properties.cjs
+
+npx jscodeshift@latest ./src/ --extensions=ts,tsx --parser=tsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/rename-hydrate/rename-hydrate.cjs
+
+npx jscodeshift@latest ./src/ --extensions=ts,tsx --parser=tsx \
+  --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/is-loading/is-loading.cjs
+```
+
+## After Running Codemods
+
+1. **Format your code**: Codemods may affect formatting
+   ```bash
+   npx prettier --write ./src
+   ```
+
+2. **Fix linting issues**: Run ESLint and fix any issues
+   ```bash
+   npx eslint ./src --fix
+   ```
+
+3. **Review changes**: Use git diff to review all changes
+   ```bash
+   git diff
+   ```
+
+4. **Test thoroughly**: Run your test suite to catch any issues
+   ```bash
+   npm test
+   ```
+
+5. **Manual review**: Check the console output for any warnings about edge cases
+
+## Limitations
+
+<Warning>
+  Codemods cannot handle all scenarios. You may need to manually update:
+  
+  - Dynamic query keys constructed at runtime
+  - Code using advanced TypeScript patterns
+  - Custom wrappers around TanStack Query hooks
+  - Spread operators with complex expressions
+  - Comments that should be preserved in specific locations
+</Warning>
+
+## Best Practices
+
+1. **Commit before running**: Always commit your code before running codemods
+2. **Run on a branch**: Create a dedicated migration branch
+3. **Test incrementally**: Run one codemod at a time and test
+4. **Use TypeScript**: TypeScript will catch many issues the codemod misses
+5. **Review the migration guide**: Codemods don't cover all breaking changes
+6. **Check the console**: Codemods log warnings for cases they can't handle
+
+## Getting Help
+
+If you encounter issues with codemods:
+
+1. Check the [migration guide](/migration/migrating-to-v5) for manual steps
+2. Search for existing issues on [GitHub](https://github.com/TanStack/query/issues)
+3. Ask for help in [GitHub Discussions](https://github.com/TanStack/query/discussions)
+4. Report bugs with the codemod in the issue tracker

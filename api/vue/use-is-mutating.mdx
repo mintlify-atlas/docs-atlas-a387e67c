@@ -1,0 +1,131 @@
+---
+title: useIsMutating
+description: Vue composable for tracking the number of mutations currently executing
+---
+
+The `useIsMutating` composable returns the number of mutations that are currently pending/executing. Useful for showing a global mutation indicator.
+
+## Import
+
+```vue
+import { useIsMutating } from '@tanstack/vue-query'
+```
+
+## Signature
+
+```ts
+function useIsMutating(
+  filters?: MutationFilters | (() => MutationFilters),
+  queryClient?: QueryClient,
+): Ref<number>
+```
+
+## Parameters
+
+<ParamField path="filters" type="MutationFilters | (() => MutationFilters)" default="{}">
+  Optional filters to narrow down which mutations to count. Can be a reactive object or a function returning filters.
+
+  <Expandable title="properties">
+    <ParamField path="mutationKey" type="MutationKey">
+      Filter mutations by mutation key.
+
+      ```ts
+      { mutationKey: ['createTodo'] }
+      ```
+    </ParamField>
+
+    <ParamField path="exact" type="boolean">
+      If `true`, only mutations with an exact mutation key match will be counted.
+    </ParamField>
+
+    <ParamField path="predicate" type="(mutation: Mutation) => boolean">
+      Custom function to filter mutations.
+
+      ```ts
+      { predicate: (mutation) => mutation.state.isPaused }
+      ```
+    </ParamField>
+
+    <ParamField path="status" type="'idle' | 'pending' | 'success' | 'error'">
+      Filter mutations by their status.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="queryClient" type="QueryClient">
+  Custom QueryClient instance.
+</ParamField>
+
+## Returns
+
+<ResponseField name="result" type="Ref<number>">
+  A reactive ref containing the number of mutations currently pending that match the filters.
+</ResponseField>
+
+## Example
+
+```vue
+<script setup>
+import { useIsMutating } from '@tanstack/vue-query'
+
+const isMutating = useIsMutating()
+</script>
+
+<template>
+  <div>
+    <div v-if="isMutating" class="global-saving-indicator">
+      Saving changes...
+    </div>
+  </div>
+</template>
+```
+
+## With Filters
+
+```vue
+<script setup>
+import { useIsMutating } from '@tanstack/vue-query'
+
+// Only count pending mutations with 'createTodo' in the mutation key
+const creatingTodos = useIsMutating({ mutationKey: ['createTodo'] })
+
+// Count all pending mutations
+const allMutating = useIsMutating({ status: 'pending' })
+</script>
+
+<template>
+  <div>
+    <div v-if="creatingTodos">Creating {{ creatingTodos }} todos...</div>
+    <div class="status">{{ allMutating }} mutations in progress</div>
+  </div>
+</template>
+```
+
+## Reactive Filters
+
+```vue
+<script setup>
+import { useIsMutating } from '@tanstack/vue-query'
+import { ref } from 'vue'
+
+const selectedType = ref('create')
+
+// Pass a function that returns reactive filters
+const typeMutating = useIsMutating(() => ({
+  mutationKey: [selectedType.value]
+}))
+</script>
+
+<template>
+  <div>
+    <select v-model="selectedType">
+      <option value="create">Create</option>
+      <option value="update">Update</option>
+      <option value="delete">Delete</option>
+    </select>
+    <div v-if="typeMutating">
+      {{ typeMutating }} {{ selectedType }} mutations in progress
+    </div>
+  </div>
+</template>
+```

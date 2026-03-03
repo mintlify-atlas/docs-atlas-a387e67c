@@ -1,0 +1,296 @@
+---
+title: ESLint Plugin
+description: Enforce best practices and avoid common mistakes with the official TanStack Query ESLint plugin
+---
+
+TanStack Query comes with its own ESLint plugin to help you follow best practices and avoid common mistakes.
+
+## Installation
+
+Install the plugin as a dev dependency:
+
+```bash
+npm install -D @tanstack/eslint-plugin-query
+# or
+pnpm add -D @tanstack/eslint-plugin-query
+# or
+yarn add -D @tanstack/eslint-plugin-query
+# or
+bun add -D @tanstack/eslint-plugin-query
+```
+
+## Configuration
+
+### Flat Config (eslint.config.js)
+
+#### Recommended Setup
+
+To enable all recommended rules, add the plugin's recommended config:
+
+```js
+import pluginQuery from '@tanstack/eslint-plugin-query'
+
+export default [
+  ...pluginQuery.configs['flat/recommended'],
+  // Your other config...
+]
+```
+
+#### Custom Setup
+
+Alternatively, configure only the rules you want:
+
+```js
+import pluginQuery from '@tanstack/eslint-plugin-query'
+
+export default [
+  {
+    plugins: {
+      '@tanstack/query': pluginQuery,
+    },
+    rules: {
+      '@tanstack/query/exhaustive-deps': 'error',
+      '@tanstack/query/no-rest-destructuring': 'warn',
+    },
+  },
+  // Your other config...
+]
+```
+
+### Legacy Config (.eslintrc)
+
+#### Recommended Setup
+
+Add the plugin to your extends array:
+
+```json
+{
+  "extends": ["plugin:@tanstack/query/recommended"]
+}
+```
+
+#### Custom Setup
+
+Alternatively, manually configure the plugin:
+
+```json
+{
+  "plugins": ["@tanstack/query"],
+  "rules": {
+    "@tanstack/query/exhaustive-deps": "error",
+    "@tanstack/query/no-rest-destructuring": "warn"
+  }
+}
+```
+
+## Rules
+
+### exhaustive-deps
+
+**Type:** Error (in recommended config)
+
+Ensures that query functions use all variables from their scope that are also included in the query key. This prevents stale closures and ensures queries refetch when their dependencies change.
+
+```tsx
+// ❌ Bad - id is in query key but not used in queryFn
+const { data } = useQuery({
+  queryKey: ['user', id],
+  queryFn: () => fetchUser(), // Should use id!
+})
+
+// ✅ Good
+const { data } = useQuery({
+  queryKey: ['user', id],
+  queryFn: () => fetchUser(id),
+})
+```
+
+### no-rest-destructuring
+
+**Type:** Warning (in recommended config)
+
+Prevents the use of rest destructuring in query results, which can lead to unnecessary re-renders.
+
+```tsx
+// ❌ Bad - rest destructuring causes re-renders on every cache update
+const { data, ...rest } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+})
+
+// ✅ Good - explicitly destructure what you need
+const { data, isLoading, error } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+})
+```
+
+### stable-query-client
+
+**Type:** Error (in recommended config)
+
+Ensures that `QueryClient` instances are created outside of components to prevent re-creating the client on every render.
+
+```tsx
+// ❌ Bad - creates new client on every render
+function App() {
+  const queryClient = new QueryClient()
+  return <QueryClientProvider client={queryClient}>...</QueryClientProvider>
+}
+
+// ✅ Good - client is stable across renders
+const queryClient = new QueryClient()
+
+function App() {
+  return <QueryClientProvider client={queryClient}>...</QueryClientProvider>
+}
+```
+
+### no-unstable-deps
+
+**Type:** Error (in recommended config)
+
+Ensures that query keys and other dependencies are stable and won't cause infinite loops.
+
+```tsx
+// ❌ Bad - object literal created on every render
+const { data } = useQuery({
+  queryKey: ['user', { id: userId }], // Creates new object every time
+  queryFn: () => fetchUser(userId),
+})
+
+// ✅ Good - stable values
+const { data } = useQuery({
+  queryKey: ['user', userId],
+  queryFn: () => fetchUser(userId),
+})
+
+// ✅ Also good - memoized object
+const userFilter = useMemo(() => ({ id: userId }), [userId])
+const { data } = useQuery({
+  queryKey: ['user', userFilter],
+  queryFn: () => fetchUser(userFilter),
+})
+```
+
+### infinite-query-property-order
+
+**Type:** Error (in recommended config)
+
+Ensures that `initialPageParam` comes before `getNextPageParam` and `getPreviousPageParam` in infinite queries for better readability.
+
+```tsx
+// ❌ Bad - initialPageParam should come first
+const { data } = useInfiniteQuery({
+  queryKey: ['projects'],
+  queryFn: ({ pageParam }) => fetchProjects(pageParam),
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+  initialPageParam: 0,
+})
+
+// ✅ Good - proper order
+const { data } = useInfiniteQuery({
+  queryKey: ['projects'],
+  queryFn: ({ pageParam }) => fetchProjects(pageParam),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
+```
+
+### no-void-query-fn
+
+**Type:** Error (in recommended config)
+
+Prevents query functions from returning void, which is a common mistake.
+
+```tsx
+// ❌ Bad - console.log returns undefined
+const { data } = useQuery({
+  queryKey: ['user'],
+  queryFn: () => console.log('fetching'), // Returns undefined!
+})
+
+// ❌ Bad - missing return statement
+const { data } = useQuery({
+  queryKey: ['user'],
+  queryFn: () => {
+    fetchUser() // No return!
+  },
+})
+
+// ✅ Good - returns a promise
+const { data } = useQuery({
+  queryKey: ['user'],
+  queryFn: () => fetchUser(),
+})
+
+// ✅ Good - explicit return
+const { data } = useQuery({
+  queryKey: ['user'],
+  queryFn: async () => {
+    return await fetchUser()
+  },
+})
+```
+
+### mutation-property-order
+
+**Type:** Error (in recommended config)
+
+Ensures consistent property order in mutation options for better readability.
+
+```tsx
+// ❌ Bad - inconsistent order
+const mutation = useMutation({
+  onSuccess: () => {},
+  mutationFn: createUser,
+  mutationKey: ['createUser'],
+})
+
+// ✅ Good - mutationFn and mutationKey first
+const mutation = useMutation({
+  mutationKey: ['createUser'],
+  mutationFn: createUser,
+  onSuccess: () => {},
+})
+```
+
+## Recommended Rules Summary
+
+The recommended config enables the following rules:
+
+```js
+{
+  '@tanstack/query/exhaustive-deps': 'error',
+  '@tanstack/query/no-rest-destructuring': 'warn',
+  '@tanstack/query/stable-query-client': 'error',
+  '@tanstack/query/no-unstable-deps': 'error',
+  '@tanstack/query/infinite-query-property-order': 'error',
+  '@tanstack/query/no-void-query-fn': 'error',
+  '@tanstack/query/mutation-property-order': 'error',
+}
+```
+
+## Framework Support
+
+The ESLint plugin works with all TanStack Query framework adapters:
+
+- React Query
+- Vue Query
+- Svelte Query
+- Solid Query
+- Angular Query
+
+The rules are framework-agnostic and will work with any TanStack Query implementation.
+
+## Best Practices
+
+1. **Use the recommended config**: It includes all rules that prevent common mistakes
+2. **Enable auto-fix**: Many rules support ESLint's `--fix` flag for automatic corrections
+3. **Integrate with CI/CD**: Run ESLint in your CI pipeline to catch issues before they reach production
+4. **Combine with TypeScript**: Use TypeScript alongside ESLint for the best developer experience
+5. **Review warnings**: Don't ignore warnings - they often indicate potential performance issues
+
+## Migration from v4
+
+In v5, the `prefer-query-object-syntax` rule was removed because the object syntax is now the only supported syntax. If you're migrating from v4, you can safely remove this rule from your config.

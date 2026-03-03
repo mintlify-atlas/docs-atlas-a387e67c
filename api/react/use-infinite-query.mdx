@@ -1,0 +1,353 @@
+---
+title: useInfiniteQuery
+description: React hook for fetching paginated or infinite scrolling data
+---
+
+The `useInfiniteQuery` hook is used to fetch data that is paginated or infinite. It's built on top of `useQuery` and adds functionality for fetching multiple pages of data.
+
+## Import
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/react-query'
+```
+
+## Signature
+
+```tsx
+function useInfiniteQuery<
+  TQueryFnData,
+  TError = DefaultError,
+  TData = InfiniteData<TQueryFnData>,
+  TQueryKey extends QueryKey = QueryKey,
+  TPageParam = unknown,
+>(
+  options: UseInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>,
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError>
+```
+
+## Type Parameters
+
+- `TQueryFnData` - The type of data returned by each page of the query function
+- `TError` - The type of error that can be thrown (defaults to `DefaultError`)
+- `TData` - The type of data returned after transformation (defaults to `InfiniteData<TQueryFnData>`)
+- `TQueryKey` - The type of the query key (defaults to `QueryKey`)
+- `TPageParam` - The type of the page parameter
+
+## Parameters
+
+### options
+
+Type: `UseInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>`
+
+The infinite query configuration object. Includes all `useQuery` options plus:
+
+#### queryFn
+
+- **Type:** `(context: QueryFunctionContext<TQueryKey, TPageParam>) => Promise<TQueryFnData>`
+- **Required:** Yes
+
+The function that fetches each page. Receives a context object with:
+- `queryKey` - The query key
+- `pageParam` - The current page parameter
+- `signal` - An AbortSignal for cancellation
+- `direction` - The direction of the page fetch (`'forward'` or `'backward'`)
+
+```tsx
+queryFn: async ({ queryKey, pageParam = 0 }) => {
+  const response = await fetch(`/api/items?page=${pageParam}`)
+  return response.json()
+}
+```
+
+#### initialPageParam
+
+- **Type:** `TPageParam`
+- **Required:** Yes
+
+The default page parameter to use for the first page.
+
+```tsx
+initialPageParam: 0
+```
+
+#### getNextPageParam
+
+- **Type:** `(lastPage: TQueryFnData, allPages: TQueryFnData[], lastPageParam: TPageParam, allPageParams: TPageParam[]) => TPageParam | undefined | null`
+- **Required:** Yes
+
+Function to get the next page parameter. Return `undefined` or `null` to indicate there are no more pages.
+
+```tsx
+getNextPageParam: (lastPage, allPages, lastPageParam) => {
+  return lastPage.nextCursor
+}
+```
+
+#### getPreviousPageParam
+
+- **Type:** `(firstPage: TQueryFnData, allPages: TQueryFnData[], firstPageParam: TPageParam, allPageParams: TPageParam[]) => TPageParam | undefined | null`
+- **Optional**
+
+Function to get the previous page parameter. Return `undefined` or `null` to indicate there are no more previous pages.
+
+```tsx
+getPreviousPageParam: (firstPage, allPages, firstPageParam) => {
+  return firstPage.prevCursor
+}
+```
+
+#### maxPages
+
+- **Type:** `number | undefined`
+- **Optional**
+
+Maximum number of pages to keep in the data array.
+
+### queryClient
+
+- **Type:** `QueryClient`
+- **Optional**
+
+A custom QueryClient instance.
+
+## Returns
+
+Type: `UseInfiniteQueryResult<TData, TError>`
+
+The infinite query result object. Includes all `UseQueryResult` properties plus:
+
+### data
+
+- **Type:** `InfiniteData<TQueryFnData> | undefined`
+
+The accumulated data from all pages:
+
+```tsx
+{
+  pages: TQueryFnData[],
+  pageParams: TPageParam[]
+}
+```
+
+### fetchNextPage
+
+- **Type:** `(options?: FetchNextPageOptions) => Promise<UseInfiniteQueryResult>`
+
+Function to fetch the next page of data.
+
+```tsx
+fetchNextPage()
+```
+
+### fetchPreviousPage
+
+- **Type:** `(options?: FetchPreviousPageOptions) => Promise<UseInfiniteQueryResult>`
+
+Function to fetch the previous page of data.
+
+### hasNextPage
+
+- **Type:** `boolean`
+
+`true` if there is a next page to fetch.
+
+### hasPreviousPage
+
+- **Type:** `boolean`
+
+`true` if there is a previous page to fetch.
+
+### isFetchingNextPage
+
+- **Type:** `boolean`
+
+`true` if currently fetching the next page.
+
+### isFetchingPreviousPage
+
+- **Type:** `boolean`
+
+`true` if currently fetching the previous page.
+
+### isFetchNextPageError
+
+- **Type:** `boolean`
+
+`true` if the next page fetch failed.
+
+### isFetchPreviousPageError
+
+- **Type:** `boolean`
+
+`true` if the previous page fetch failed.
+
+## Examples
+
+### Basic Infinite Query
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/react-query'
+
+function Projects() {
+  const {
+    data,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetching,
+    isFetchingNextPage,
+    status,
+  } = useInfiniteQuery({
+    queryKey: ['projects'],
+    queryFn: async ({ pageParam }) => {
+      const response = await fetch(`/api/projects?cursor=${pageParam}`)
+      return response.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => lastPage.nextCursor,
+  })
+
+  if (status === 'pending') return <div>Loading...</div>
+  if (status === 'error') return <div>Error: {error.message}</div>
+
+  return (
+    <div>
+      {data.pages.map((page, i) => (
+        <div key={i}>
+          {page.items.map((project) => (
+            <div key={project.id}>{project.name}</div>
+          ))}
+        </div>
+      ))}
+      <button
+        onClick={() => fetchNextPage()}
+        disabled={!hasNextPage || isFetchingNextPage}
+      >
+        {isFetchingNextPage
+          ? 'Loading more...'
+          : hasNextPage
+          ? 'Load More'
+          : 'Nothing more to load'}
+      </button>
+      <div>{isFetching && !isFetchingNextPage ? 'Fetching...' : null}</div>
+    </div>
+  )
+}
+```
+
+### Bi-directional Infinite Query
+
+```tsx
+function Feed() {
+  const {
+    data,
+    fetchNextPage,
+    fetchPreviousPage,
+    hasNextPage,
+    hasPreviousPage,
+  } = useInfiniteQuery({
+    queryKey: ['feed'],
+    queryFn: async ({ pageParam }) => {
+      const response = await fetch(`/api/feed?cursor=${pageParam}`)
+      return response.json()
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    getPreviousPageParam: (firstPage) => firstPage.prevCursor,
+  })
+
+  return (
+    <div>
+      <button
+        onClick={() => fetchPreviousPage()}
+        disabled={!hasPreviousPage}
+      >
+        Load Newer
+      </button>
+      {data?.pages.map((page) => (
+        // Render page data
+      ))}
+      <button onClick={() => fetchNextPage()} disabled={!hasNextPage}>
+        Load Older
+      </button>
+    </div>
+  )
+}
+```
+
+### Page-based Pagination
+
+```tsx
+function Posts() {
+  const { data, fetchNextPage, hasNextPage } = useInfiniteQuery({
+    queryKey: ['posts'],
+    queryFn: async ({ pageParam }) => {
+      const response = await fetch(`/api/posts?page=${pageParam}&limit=10`)
+      return response.json()
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages, lastPageParam) => {
+      // If there are less than 10 items, we've reached the end
+      if (lastPage.length < 10) return undefined
+      return lastPageParam + 1
+    },
+  })
+
+  // ...
+}
+```
+
+### Infinite Query with Select
+
+```tsx
+function Projects() {
+  const { data } = useInfiniteQuery({
+    queryKey: ['projects'],
+    queryFn: fetchProjects,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    select: (data) => ({
+      pages: data.pages.flatMap((page) => page.items),
+      pageParams: data.pageParams,
+    }),
+  })
+
+  // data.pages is now a flat array of all items
+}
+```
+
+### Refetching All Pages
+
+```tsx
+function Projects() {
+  const { refetch } = useInfiniteQuery({
+    queryKey: ['projects'],
+    queryFn: fetchProjects,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+
+  return (
+    <button onClick={() => refetch()}>
+      Refetch All Pages
+    </button>
+  )
+}
+```
+
+### Max Pages
+
+```tsx
+function Feed() {
+  const { data } = useInfiniteQuery({
+    queryKey: ['feed'],
+    queryFn: fetchFeed,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    maxPages: 3, // Only keep the last 3 pages in memory
+  })
+
+  // ...
+}
+```

@@ -1,0 +1,180 @@
+---
+title: useQueries
+description: Vue composable for fetching multiple queries in parallel
+---
+
+The `useQueries` composable allows you to fetch multiple queries in parallel while maintaining their individual states.
+
+## Import
+
+```vue
+import { useQueries } from '@tanstack/vue-query'
+```
+
+## Signature
+
+```ts
+function useQueries<T extends Array<any>, TCombinedResult = UseQueriesResults<T>>(
+  options: {
+    queries: MaybeRefDeep<UseQueriesOptionsArg<T>>
+    combine?: (result: UseQueriesResults<T>) => TCombinedResult
+  } & ShallowOption,
+  queryClient?: QueryClient,
+): Readonly<Ref<TCombinedResult>>
+```
+
+## Parameters
+
+<ParamField path="options" type="object" required>
+  Configuration object for multiple queries.
+
+  <Expandable title="properties">
+    <ParamField path="queries" type="UseQueriesOptionsArg<T>" required>
+      An array of query options objects. Each element can be a reactive ref or plain object.
+
+      ```ts
+      queries: [
+        { queryKey: ['todo', 1], queryFn: () => fetchTodo(1) },
+        { queryKey: ['todo', 2], queryFn: () => fetchTodo(2) },
+      ]
+      ```
+    </ParamField>
+
+    <ParamField path="combine" type="(result: UseQueriesResults<T>) => TCombinedResult">
+      Optional function to combine or transform the results from all queries.
+
+      ```ts
+      combine: (results) => {
+        return {
+          data: results.map(r => r.data),
+          pending: results.some(r => r.isPending),
+        }
+      }
+      ```
+    </ParamField>
+
+    <ParamField path="shallow" type="boolean">
+      If `true`, uses shallow reactivity for better performance with large datasets.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="queryClient" type="QueryClient">
+  Custom QueryClient instance.
+</ParamField>
+
+## Returns
+
+Returns a readonly ref containing an array of query results, or the combined result if `combine` is used.
+
+<ResponseField name="[n].data" type="TData | undefined">
+  The data for the nth query.
+</ResponseField>
+
+<ResponseField name="[n].error" type="TError | null">
+  The error for the nth query.
+</ResponseField>
+
+<ResponseField name="[n].status" type="'pending' | 'error' | 'success'">
+  The status of the nth query.
+</ResponseField>
+
+<ResponseField name="[n].isPending" type="boolean">
+  `true` if the nth query is pending.
+</ResponseField>
+
+<ResponseField name="[n].isError" type="boolean">
+  `true` if the nth query has errored.
+</ResponseField>
+
+<ResponseField name="[n].isSuccess" type="boolean">
+  `true` if the nth query has succeeded.
+</ResponseField>
+
+<ResponseField name="[n].refetch" type="() => Promise<UseQueryResult>">
+  Function to manually refetch the nth query.
+</ResponseField>
+
+## Example
+
+```vue
+<script setup>
+import { useQueries } from '@tanstack/vue-query'
+import { ref, computed } from 'vue'
+
+const todoIds = ref([1, 2, 3])
+
+const queries = computed(() => 
+  todoIds.value.map(id => ({
+    queryKey: ['todo', id],
+    queryFn: async () => {
+      const response = await fetch(`https://api.example.com/todos/${id}`)
+      return response.json()
+    },
+  }))
+)
+
+const results = useQueries({ queries })
+
+// Check if all queries are loaded
+const allLoaded = computed(() => 
+  results.value.every(result => !result.isPending)
+)
+
+// Get all data
+const allData = computed(() => 
+  results.value.map(result => result.data).filter(Boolean)
+)
+</script>
+
+<template>
+  <div>
+    <div v-if="!allLoaded">Loading...</div>
+    <div v-else>
+      <div v-for="(result, index) in results" :key="index">
+        <div v-if="result.isError">Error: {{ result.error.message }}</div>
+        <div v-else-if="result.data">{{ result.data.title }}</div>
+      </div>
+    </div>
+  </div>
+</template>
+```
+
+## With Combine
+
+```vue
+<script setup>
+import { useQueries } from '@tanstack/vue-query'
+import { computed } from 'vue'
+
+const combinedResult = useQueries({
+  queries: [
+    { queryKey: ['user', 1], queryFn: () => fetchUser(1) },
+    { queryKey: ['posts', 1], queryFn: () => fetchUserPosts(1) },
+  ],
+  combine: (results) => {
+    return {
+      user: results[0].data,
+      posts: results[1].data,
+      isPending: results.some(r => r.isPending),
+      isError: results.some(r => r.isError),
+    }
+  },
+})
+</script>
+
+<template>
+  <div>
+    <div v-if="combinedResult.isPending">Loading...</div>
+    <div v-else-if="combinedResult.isError">Error occurred</div>
+    <div v-else>
+      <h2>{{ combinedResult.user?.name }}</h2>
+      <ul>
+        <li v-for="post in combinedResult.posts" :key="post.id">
+          {{ post.title }}
+        </li>
+      </ul>
+    </div>
+  </div>
+</template>
+```

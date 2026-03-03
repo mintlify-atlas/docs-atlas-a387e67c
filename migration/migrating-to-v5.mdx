@@ -1,0 +1,575 @@
+---
+title: Migrating to v5
+description: Complete guide to migrating from TanStack Query v4 to v5 with breaking changes and new features
+---
+
+TanStack Query v5 brings significant improvements, better TypeScript support, and new features. This guide will help you migrate from v4 to v5.
+
+## Breaking Changes
+
+### Minimum Requirements
+
+<Warning>
+  TanStack Query v5 has updated minimum version requirements.
+</Warning>
+
+- **React**: 18.0 or later (for React Query)
+- **TypeScript**: 4.7 or later
+- **Browsers**: Updated to modern browsers (see browserslist)
+
+### Single Object Signature
+
+All hooks and methods now only support the object syntax. Function overloads have been removed.
+
+```tsx
+// ❌ v4 - Multiple signatures
+useQuery(key, fn, options)
+useQuery({ queryKey, queryFn, ...options })
+
+// ✅ v5 - Single object signature only
+useQuery({ queryKey, queryFn, ...options })
+```
+
+**All affected hooks and methods:**
+
+```tsx
+// Hooks
+useQuery({ queryKey, queryFn, ...options })
+useInfiniteQuery({ queryKey, queryFn, ...options })
+useMutation({ mutationFn, ...options })
+useIsFetching({ queryKey, ...filters })
+useIsMutating({ mutationKey, ...filters })
+
+// QueryClient methods
+queryClient.fetchQuery({ queryKey, queryFn, ...options })
+queryClient.prefetchQuery({ queryKey, queryFn, ...options })
+queryClient.invalidateQueries({ queryKey, ...filters })
+queryClient.refetchQueries({ queryKey, ...filters })
+queryClient.cancelQueries({ queryKey, ...filters })
+queryClient.removeQueries({ queryKey, ...filters })
+queryClient.resetQueries({ queryKey, ...filters })
+queryClient.setQueriesData({ queryKey, ...filters }, updater)
+
+// Simple key-only methods
+queryClient.getQueryData(queryKey)
+queryClient.getQueryState(queryKey)
+```
+
+**Migration:** Use the [remove-overloads codemod](/plugins/codemods#remove-overloads) to automatically update your code.
+
+### Query Callbacks Removed
+
+`onSuccess`, `onError`, and `onSettled` have been removed from queries (but remain for mutations).
+
+```tsx
+// ❌ v4
+useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  onSuccess: (data) => {
+    console.log('Data loaded:', data)
+  },
+})
+
+// ✅ v5 - Use useEffect instead
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+})
+
+React.useEffect(() => {
+  if (data) {
+    console.log('Data loaded:', data)
+  }
+}, [data])
+```
+
+**Why?** See the [RFC](https://github.com/TanStack/query/discussions/5279) for the reasoning.
+
+### Renamed: `cacheTime` → `gcTime`
+
+The `cacheTime` option has been renamed to `gcTime` (garbage collection time) for clarity.
+
+```tsx
+// ❌ v4
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      cacheTime: 10 * 60 * 1000,
+    },
+  },
+})
+
+// ✅ v5
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      gcTime: 10 * 60 * 1000,
+    },
+  },
+})
+```
+
+### Renamed: `useErrorBoundary` → `throwOnError`
+
+Made framework-agnostic and more descriptive.
+
+```tsx
+// ❌ v4
+useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  useErrorBoundary: true,
+})
+
+// ✅ v5
+useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  throwOnError: true,
+})
+```
+
+### Status Changes: `loading` → `pending`
+
+The `loading` status and `isLoading` flag have been renamed for clarity.
+
+```tsx
+// ❌ v4
+const { data, status, isLoading } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+})
+
+if (status === 'loading') { /* ... */ }
+if (isLoading) { /* ... */ }
+
+// ✅ v5
+const { data, status, isPending, isLoading } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+})
+
+if (status === 'pending') { /* ... */ }
+if (isPending) { /* ... */ }
+
+// Note: isLoading is now isPending && isFetching
+if (isLoading) { /* Shows loading on initial fetch only */ }
+```
+
+**Status values:**
+- `'loading'` → `'pending'`
+- `'success'` → `'success'` (unchanged)
+- `'error'` → `'error'` (unchanged)
+
+**Flags:**
+- `isLoading` → `isPending`
+- `isInitialLoading` → `isLoading` (new definition: `isPending && isFetching`)
+
+### `keepPreviousData` Removed
+
+Replaced with `placeholderData` function.
+
+```tsx
+// ❌ v4
+import { useQuery } from '@tanstack/react-query'
+
+const { data, isPreviousData } = useQuery({
+  queryKey: ['projects', page],
+  queryFn: () => fetchProjects(page),
+  keepPreviousData: true,
+})
+
+// ✅ v5
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
+
+const { data, isPlaceholderData } = useQuery({
+  queryKey: ['projects', page],
+  queryFn: () => fetchProjects(page),
+  placeholderData: keepPreviousData,
+})
+```
+
+**Migration:** Use the [keep-previous-data codemod](/plugins/codemods#keep-previous-data).
+
+### `remove` Method Removed from Queries
+
+Use `queryClient.removeQueries()` instead.
+
+```tsx
+// ❌ v4
+const query = useQuery({ queryKey, queryFn })
+query.remove()
+
+// ✅ v5
+const queryClient = useQueryClient()
+const query = useQuery({ queryKey, queryFn })
+queryClient.removeQueries({ queryKey })
+```
+
+### TypeScript: `Error` is Now the Default Error Type
+
+```tsx
+// v4: error was unknown by default
+const { error } = useQuery({ queryKey, queryFn })
+// error: unknown
+
+// v5: error is Error by default
+const { error } = useQuery({ queryKey, queryFn })
+// error: Error
+
+// If you throw something else, specify it:
+const { error } = useQuery<number, string>({
+  queryKey: ['query'],
+  queryFn: async () => {
+    if (Math.random() > 0.5) throw 'error string'
+    return 42
+  },
+})
+// error: string
+```
+
+### Infinite Queries Require `initialPageParam`
+
+You must now explicitly provide the initial page parameter.
+
+```tsx
+// ❌ v4
+useInfiniteQuery({
+  queryKey: ['projects'],
+  queryFn: ({ pageParam = 0 }) => fetchProjects(pageParam),
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
+
+// ✅ v5
+useInfiniteQuery({
+  queryKey: ['projects'],
+  queryFn: ({ pageParam }) => fetchProjects(pageParam),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
+```
+
+### Infinite Query Manual Mode Removed
+
+`fetchNextPage` and `fetchPreviousPage` no longer accept `pageParam` directly.
+
+```tsx
+// ❌ v4
+fetchNextPage({ pageParam: customParam })
+
+// ✅ v5 - Use getNextPageParam instead
+// The pageParam comes from getNextPageParam return value
+fetchNextPage()
+```
+
+### `null` Now Indicates No More Pages
+
+Both `null` and `undefined` indicate no more pages.
+
+```tsx
+// v4: Only undefined worked
+getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined
+
+// v5: Both null and undefined work
+getNextPageParam: (lastPage) => lastPage.nextCursor ?? null
+getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined
+```
+
+### No Retries on Server by Default
+
+`retry` now defaults to `0` on the server (was `3` in v4).
+
+```tsx
+// Override if needed
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: typeof window === 'undefined' ? 0 : 3,
+    },
+  },
+})
+```
+
+### `refetchInterval` Callback Changes
+
+The callback now only receives `query` (not `data`).
+
+```tsx
+// ❌ v4
+refetchInterval: (data, query) => {
+  return data?.pollInterval ?? false
+}
+
+// ✅ v5
+refetchInterval: (query) => {
+  return query.state.data?.pollInterval ?? false
+}
+```
+
+### `isDataEqual` Removed
+
+Use `structuralSharing` function instead.
+
+```tsx
+// ❌ v4
+isDataEqual: (oldData, newData) => customCheck(oldData, newData)
+
+// ✅ v5
+import { replaceEqualDeep } from '@tanstack/react-query'
+
+structuralSharing: (oldData, newData) => 
+  customCheck(oldData, newData) ? oldData : replaceEqualDeep(oldData, newData)
+```
+
+### Private Class Fields
+
+TanStack Query now uses ECMAScript private class fields. You can no longer access private fields at runtime.
+
+### Window Focus Refetching Changes
+
+Now uses `visibilitychange` event exclusively (no more `focus` event).
+
+### Network Status Changes
+
+`navigator.onLine` is no longer used due to false negatives in Chromium browsers. Always starts with `online: true`.
+
+### Custom `context` Removed
+
+Use custom `queryClient` instead.
+
+```tsx
+// ❌ v4
+const customContext = React.createContext()
+
+const { data } = useQuery(
+  { queryKey, queryFn },
+  { context: customContext }
+)
+
+// ✅ v5
+import { queryClient } from './my-client'
+
+const { data } = useQuery(
+  { queryKey, queryFn },
+  queryClient
+)
+```
+
+### `refetchPage` Removed, `maxPages` Added
+
+Infinite queries now use `maxPages` to limit stored pages.
+
+```tsx
+useInfiniteQuery({
+  queryKey: ['projects'],
+  queryFn: ({ pageParam }) => fetchProjects(pageParam),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+  getPreviousPageParam: (firstPage) => firstPage.prevCursor,
+  maxPages: 3, // Keep only 3 pages in memory
+})
+```
+
+### Simplified `dehydrate` API
+
+```tsx
+// ❌ v4
+dehydrate(queryClient, {
+  dehydrateQueries: false,
+  dehydrateMutations: true,
+})
+
+// ✅ v5
+dehydrate(queryClient, {
+  shouldDehydrateQuery: () => false, // Don't dehydrate queries
+  shouldDehydrateMutation: () => true, // Dehydrate all mutations
+})
+```
+
+### React-Specific Breaking Changes
+
+#### `Hydrate` → `HydrationBoundary`
+
+```tsx
+// ❌ v4
+import { Hydrate } from '@tanstack/react-query'
+
+<Hydrate state={dehydratedState}>
+  <App />
+</Hydrate>
+
+// ✅ v5
+import { HydrationBoundary } from '@tanstack/react-query'
+
+<HydrationBoundary state={dehydratedState}>
+  <App />
+</HydrationBoundary>
+```
+
+#### `contextSharing` Removed
+
+Share custom `queryClient` instances directly instead.
+
+#### No More `unstable_batchedUpdates`
+
+Since React 18's `unstable_batchedUpdates` is a no-op, it's no longer used.
+
+### Query Defaults Changes
+
+`queryClient.getQueryDefaults` now merges all matching registrations (most generic to most specific).
+
+```tsx
+// v5: Order from generic to specific
+queryClient.setQueryDefaults(['todos'], {
+  staleTime: 60_000,
+})
+
+queryClient.setQueryDefaults(['todos', 'detail'], {
+  staleTime: 10_000, // More specific, will override
+})
+```
+
+## New Features
+
+### Suspense Hooks
+
+Dedicated suspense hooks with better type safety.
+
+```tsx
+import { useSuspenseQuery } from '@tanstack/react-query'
+
+function Component() {
+  const { data } = useSuspenseQuery({
+    queryKey: ['user'],
+    queryFn: fetchUser,
+  })
+  
+  // data is never undefined!
+  return <div>{data.name}</div>
+}
+```
+
+Also available:
+- `useSuspenseInfiniteQuery`
+- `useSuspenseQueries`
+
+### Simplified Optimistic Updates
+
+```tsx
+const queryInfo = useTodos()
+const addTodoMutation = useMutation({
+  mutationFn: (newTodo: string) => axios.post('/api/data', { text: newTodo }),
+  onSettled: () => queryClient.invalidateQueries({ queryKey: ['todos'] }),
+})
+
+return (
+  <ul>
+    {queryInfo.data?.items.map((todo) => <li key={todo.id}>{todo.text}</li>)}
+    {addTodoMutation.isPending && (
+      <li style={{ opacity: 0.5 }}>{addTodoMutation.variables}</li>
+    )}
+  </ul>
+)
+```
+
+### `maxPages` for Infinite Queries
+
+Limit memory usage by restricting stored pages.
+
+```tsx
+useInfiniteQuery({
+  queryKey: ['projects'],
+  queryFn: ({ pageParam }) => fetchProjects(pageParam),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+  getPreviousPageParam: (firstPage) => firstPage.prevCursor,
+  maxPages: 5,
+})
+```
+
+### Prefetch Multiple Pages
+
+```tsx
+await queryClient.prefetchInfiniteQuery({
+  queryKey: ['projects'],
+  queryFn: ({ pageParam }) => fetchProjects(pageParam),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+  pages: 3, // Prefetch 3 pages
+})
+```
+
+### `combine` Option for `useQueries`
+
+Combine results from multiple queries.
+
+```tsx
+const result = useQueries({
+  queries: [
+    { queryKey: ['user', 1], queryFn: () => fetchUser(1) },
+    { queryKey: ['user', 2], queryFn: () => fetchUser(2) },
+  ],
+  combine: (results) => {
+    return {
+      data: results.map((r) => r.data),
+      pending: results.some((r) => r.isPending),
+    }
+  },
+})
+```
+
+### Typesafe Query Options
+
+Create reusable, type-safe query options.
+
+```tsx
+import { queryOptions } from '@tanstack/react-query'
+
+function userOptions(id: number) {
+  return queryOptions({
+    queryKey: ['user', id],
+    queryFn: () => fetchUser(id),
+    staleTime: 5000,
+  })
+}
+
+// Use in hooks
+const { data } = useQuery(userOptions(1))
+const { data: suspenseData } = useSuspenseQuery(userOptions(1))
+
+// Use in queryClient
+await queryClient.prefetchQuery(userOptions(1))
+```
+
+## Migration Steps
+
+1. **Update dependencies**
+   ```bash
+   npm install @tanstack/react-query@^5 @tanstack/react-query-devtools@^5
+   ```
+
+2. **Run codemods** (see [Codemods](/plugins/codemods))
+   ```bash
+   npx jscodeshift@latest ./src --extensions=ts,tsx --parser=tsx \
+     --transform=./node_modules/@tanstack/react-query/build/codemods/src/v5/remove-overloads/remove-overloads.cjs
+   ```
+
+3. **Update TypeScript version** (minimum 4.7)
+
+4. **Update React version** (minimum 18.0)
+
+5. **Review and update query callbacks** (convert to useEffect)
+
+6. **Update status checks** (`loading` → `pending`)
+
+7. **Update infinite queries** (add `initialPageParam`)
+
+8. **Test thoroughly**
+
+## Resources
+
+- [v5 Announcement](https://tanstack.com/blog/announcing-tanstack-query-v5)
+- [v5 Roadmap Discussion](https://github.com/TanStack/query/discussions/4252)
+- [Codemods](/plugins/codemods)
+- [GitHub Discussions](https://github.com/TanStack/query/discussions)

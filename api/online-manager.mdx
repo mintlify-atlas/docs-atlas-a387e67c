@@ -1,0 +1,108 @@
+---
+title: onlineManager
+description: API reference for the onlineManager utility that tracks network connectivity
+---
+
+The `onlineManager` is a singleton utility that manages network connectivity state and notifies listeners when the online status changes. It's used internally by TanStack Query to pause/resume queries and mutations based on network availability.
+
+## Import
+
+```ts
+import { onlineManager } from '@tanstack/query-core'
+```
+
+## Methods
+
+### `setEventListener()`
+
+Sets up a custom event listener function for online/offline tracking. This is useful for custom environments like React Native.
+
+<ParamField path="setup" type="(setOnline: (online: boolean) => void) => (() => void) | undefined">
+  A setup function that receives a `setOnline` callback and should return a cleanup function. The setup function should call `setOnline(true)` when going online and `setOnline(false)` when going offline.
+</ParamField>
+
+**Example**
+
+```ts
+import NetInfo from '@react-native-community/netinfo'
+
+onlineManager.setEventListener((setOnline) => {
+  return NetInfo.addEventListener((state) => {
+    setOnline(!!state.isConnected)
+  })
+})
+```
+
+### `setOnline()`
+
+Manually sets the online state. This will trigger listeners if the state changes.
+
+<ParamField path="online" type="boolean">
+  The new online state. `true` indicates the device is online, `false` indicates offline.
+</ParamField>
+
+**Example**
+
+```ts
+// Manually set online state
+onlineManager.setOnline(true)
+
+// Simulate offline mode
+onlineManager.setOnline(false)
+```
+
+### `isOnline()`
+
+Returns the current online state.
+
+**Returns:** `boolean`
+
+Returns `true` if the device is currently online, `false` if offline. Defaults to `true`.
+
+**Example**
+
+```ts
+if (onlineManager.isOnline()) {
+  console.log('Device is online')
+} else {
+  console.log('Device is offline')
+}
+```
+
+### `subscribe()`
+
+Subscribes to online state changes.
+
+<ParamField path="listener" type="(online: boolean) => void">
+  A callback function that will be called whenever the online state changes. Receives the new online state as a boolean.
+</ParamField>
+
+**Returns:** `() => void` - An unsubscribe function to remove the listener.
+
+**Example**
+
+```ts
+const unsubscribe = onlineManager.subscribe((isOnline) => {
+  if (isOnline) {
+    console.log('Back online! Resuming queries...')
+  } else {
+    console.log('Gone offline. Pausing queries...')
+  }
+})
+
+// Later, unsubscribe
+unsubscribe()
+```
+
+## Default Behavior
+
+By default, the `onlineManager` listens to the `online` and `offline` events on the window object. It starts with an initial state of `true` (online).
+
+This default setup is automatically initialized when the first listener subscribes.
+
+## Use Cases
+
+- **React Native**: Override the default online detection using `@react-native-community/netinfo`
+- **Testing**: Mock online/offline state changes in tests
+- **Offline Mode**: Implement a manual "work offline" mode in your application
+- **Network Awareness**: Show UI indicators or notifications when connectivity changes

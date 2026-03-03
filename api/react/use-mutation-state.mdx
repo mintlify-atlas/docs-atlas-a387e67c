@@ -1,0 +1,411 @@
+---
+title: useMutationState
+description: React hook for accessing the state of all mutations in the cache
+---
+
+The `useMutationState` hook allows you to access the state of all mutations in the mutation cache. It's useful for creating global mutation indicators or accessing mutation data across components.
+
+## Import
+
+```tsx
+import { useMutationState } from '@tanstack/react-query'
+```
+
+## Signature
+
+```tsx
+function useMutationState<TResult = MutationState>(
+  options?: MutationStateOptions<TResult>,
+  queryClient?: QueryClient,
+): Array<TResult>
+```
+
+## Type Parameters
+
+- `TResult` - The type of the result returned by the `select` function (defaults to `MutationState`)
+
+## Parameters
+
+### options
+
+Type: `MutationStateOptions<TResult>`
+
+The mutation state options object with the following properties:
+
+#### filters
+
+- **Type:** `MutationFilters`
+- **Optional**
+
+Mutation filters to narrow down which mutations to include.
+
+##### mutationKey
+
+- **Type:** `unknown[]`
+
+Filter to a specific mutation key.
+
+```tsx
+filters: { mutationKey: ['todos'] }
+```
+
+##### exact
+
+- **Type:** `boolean`
+
+If `true`, only exact mutation key matches are included.
+
+##### status
+
+- **Type:** `'idle' | 'pending' | 'error' | 'success'`
+
+Filter by mutation status.
+
+```tsx
+filters: { status: 'pending' }
+```
+
+##### predicate
+
+- **Type:** `(mutation: Mutation) => boolean`
+
+A function to filter mutations.
+
+```tsx
+filters: {
+  predicate: (mutation) => mutation.state.variables?.priority === 'high'
+}
+```
+
+#### select
+
+- **Type:** `(mutation: Mutation) => TResult`
+- **Default:** `(mutation) => mutation.state`
+
+A function to select/transform the mutation data.
+
+```tsx
+select: (mutation) => mutation.state.data
+```
+
+### queryClient
+
+- **Type:** `QueryClient`
+- **Optional**
+
+A custom QueryClient instance. If not provided, the client from the nearest QueryClientProvider will be used.
+
+## Returns
+
+Type: `Array<TResult>`
+
+An array of results from all mutations that match the filters. By default, returns an array of `MutationState` objects. If a `select` function is provided, returns an array of the transformed results.
+
+### MutationState Type
+
+```tsx
+type MutationState<TData = unknown, TError = DefaultError, TVariables = unknown, TContext = unknown> = {
+  data: TData | undefined
+  error: TError | null
+  failureCount: number
+  failureReason: TError | null
+  isPaused: boolean
+  status: 'idle' | 'pending' | 'error' | 'success'
+  variables: TVariables | undefined
+  submittedAt: number
+  context: TContext | undefined
+}
+```
+
+## Examples
+
+### Get All Mutation States
+
+```tsx
+import { useMutationState } from '@tanstack/react-query'
+
+function MutationsList() {
+  const mutations = useMutationState()
+
+  return (
+    <div>
+      <h2>All Mutations</h2>
+      <ul>
+        {mutations.map((mutation, i) => (
+          <li key={i}>
+            Status: {mutation.status}
+            {mutation.variables && (
+              <pre>{JSON.stringify(mutation.variables, null, 2)}</pre>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+### Filter by Status
+
+```tsx
+import { useMutationState } from '@tanstack/react-query'
+
+function PendingMutations() {
+  const pendingMutations = useMutationState({
+    filters: { status: 'pending' },
+  })
+
+  return (
+    <div>
+      {pendingMutations.length > 0 ? (
+        <div>
+          {pendingMutations.length} {pendingMutations.length === 1 ? 'mutation' : 'mutations'} in progress
+        </div>
+      ) : (
+        <div>No pending mutations</div>
+      )}
+    </div>
+  )
+}
+```
+
+### Select Specific Data
+
+```tsx
+import { useMutationState } from '@tanstack/react-query'
+
+function MutationVariables() {
+  const variables = useMutationState({
+    filters: { status: 'pending' },
+    select: (mutation) => mutation.state.variables,
+  })
+
+  return (
+    <div>
+      <h2>Pending Mutation Variables</h2>
+      <pre>{JSON.stringify(variables, null, 2)}</pre>
+    </div>
+  )
+}
+```
+
+### Filter by Mutation Key
+
+```tsx
+import { useMutationState } from '@tanstack/react-query'
+
+function TodoMutations() {
+  const todoMutations = useMutationState({
+    filters: { mutationKey: ['todos'] },
+  })
+
+  return (
+    <div>
+      <h2>Todo Mutations</h2>
+      <div>Count: {todoMutations.length}</div>
+      <ul>
+        {todoMutations.map((mutation, i) => (
+          <li key={i}>
+            Status: {mutation.status}
+            {mutation.error && <div>Error: {mutation.error.message}</div>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+### Get Mutation Data
+
+```tsx
+import { useMutationState } from '@tanstack/react-query'
+
+function RecentlyCreatedTodos() {
+  const createdTodos = useMutationState({
+    filters: {
+      mutationKey: ['createTodo'],
+      status: 'success',
+    },
+    select: (mutation) => mutation.state.data,
+  })
+
+  return (
+    <div>
+      <h2>Recently Created Todos</h2>
+      <ul>
+        {createdTodos.map((todo, i) => (
+          <li key={i}>{todo?.title}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+### Using Predicate
+
+```tsx
+import { useMutationState } from '@tanstack/react-query'
+
+function HighPriorityMutations() {
+  const highPriorityMutations = useMutationState({
+    filters: {
+      predicate: (mutation) => {
+        return mutation.state.variables?.priority === 'high'
+      },
+    },
+  })
+
+  return (
+    <div>
+      <h2>High Priority Mutations</h2>
+      <div>Count: {highPriorityMutations.length}</div>
+    </div>
+  )
+}
+```
+
+### Show Recent Errors
+
+```tsx
+import { useMutationState } from '@tanstack/react-query'
+
+function MutationErrors() {
+  const errors = useMutationState({
+    filters: { status: 'error' },
+    select: (mutation) => ({
+      error: mutation.state.error,
+      variables: mutation.state.variables,
+    }),
+  })
+
+  return (
+    <div>
+      <h2>Recent Mutation Errors</h2>
+      {errors.map((item, i) => (
+        <div key={i} className="error">
+          <p>Error: {item.error?.message}</p>
+          <p>Variables: {JSON.stringify(item.variables)}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+### Combine Multiple Filters
+
+```tsx
+import { useMutationState } from '@tanstack/react-query'
+
+function TodoCreationStatus() {
+  const pendingCreations = useMutationState({
+    filters: {
+      mutationKey: ['createTodo'],
+      status: 'pending',
+    },
+  })
+
+  const failedCreations = useMutationState({
+    filters: {
+      mutationKey: ['createTodo'],
+      status: 'error',
+    },
+  })
+
+  const successfulCreations = useMutationState({
+    filters: {
+      mutationKey: ['createTodo'],
+      status: 'success',
+    },
+  })
+
+  return (
+    <div>
+      <div>Creating: {pendingCreations.length}</div>
+      <div>Failed: {failedCreations.length}</div>
+      <div>Successful: {successfulCreations.length}</div>
+    </div>
+  )
+}
+```
+
+### Mutation Progress Indicator
+
+```tsx
+import { useMutationState } from '@tanstack/react-query'
+
+function MutationProgress() {
+  const mutations = useMutationState({
+    filters: { mutationKey: ['upload'] },
+    select: (mutation) => ({
+      status: mutation.state.status,
+      variables: mutation.state.variables,
+    }),
+  })
+
+  return (
+    <div>
+      <h2>Upload Progress</h2>
+      {mutations.map((mutation, i) => (
+        <div key={i}>
+          <div>File: {mutation.variables?.fileName}</div>
+          <div>Status: {mutation.status}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+### Type-Safe Mutation State
+
+```tsx
+import { useMutationState } from '@tanstack/react-query'
+
+type Todo = { id: number; title: string }
+type CreateTodoVariables = { title: string }
+
+function TypedMutationState() {
+  const mutations = useMutationState<Todo | undefined>({
+    filters: { mutationKey: ['createTodo'] },
+    select: (mutation) => mutation.state.data as Todo | undefined,
+  })
+
+  return (
+    <div>
+      {mutations.map((todo, i) => (
+        <div key={i}>{todo?.title}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+### Implementing useIsMutating
+
+The `useIsMutating` hook is actually implemented using `useMutationState`:
+
+```tsx
+import { useMutationState } from '@tanstack/react-query'
+import type { MutationFilters, QueryClient } from '@tanstack/react-query'
+
+function useIsMutating(
+  filters?: MutationFilters,
+  queryClient?: QueryClient,
+): number {
+  return useMutationState(
+    { filters: { ...filters, status: 'pending' } },
+    queryClient,
+  ).length
+}
+```
+
+## Notes
+
+- This hook subscribes to the mutation cache and will re-render when mutations change
+- By default, returns the full `MutationState` for each mutation
+- Use the `select` function to transform or pick specific fields from the mutation state
+- Filters can be combined to narrow down which mutations to include
+- Useful for creating global mutation status displays or debugging mutation state

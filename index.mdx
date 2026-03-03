@@ -1,97 +1,275 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: TanStack Query Documentation
+description: Powerful asynchronous state management for TS/JS, React Query, Solid Query, Svelte Query and Vue Query
+mode: custom
 ---
 
-## Setting up
+<div className="relative bg-gradient-to-br from-[#eab968]/10 via-white to-[#4a9261]/10 dark:from-[#eab968]/5 dark:via-gray-900 dark:to-[#4a9261]/5 py-20">
+  <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="text-center">
+      <h1 className="text-5xl sm:text-6xl font-bold text-gray-900 dark:text-white mb-6">
+        TanStack Query
+      </h1>
+      <p className="text-xl sm:text-2xl text-gray-600 dark:text-gray-400 max-w-3xl mx-auto mb-10">
+        Powerful asynchronous state management, server-state utilities and data fetching for the web
+      </p>
+      <div className="flex flex-wrap justify-center gap-4 mb-12">
+        <a
+          href="/quick-start"
+          className="inline-flex items-center px-6 py-3 rounded-lg bg-[#eab968] text-white font-semibold hover:bg-[#d9a857] transition-colors"
+        >
+          Get Started
+        </a>
+        <a
+          href="/introduction"
+          className="inline-flex items-center px-6 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 text-gray-900 dark:text-white font-semibold hover:border-[#eab968] dark:hover:border-[#eab968] transition-colors"
+        >
+          Read the Docs
+        </a>
+        <a
+          href="/api/query-client"
+          className="inline-flex items-center px-6 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 text-gray-900 dark:text-white font-semibold hover:border-[#eab968] dark:hover:border-[#eab968] transition-colors"
+        >
+          API Reference
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
 
-Get your documentation site up and running in minutes.
+## Quick Start
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+Get up and running with TanStack Query in your preferred framework in minutes.
 
-## Make it yours
+<Steps>
+  <Step title="Install TanStack Query">
+    Choose your framework and install the corresponding package:
 
-Design a docs site that looks great and empowers your users.
+    <CodeGroup>
+    ```bash npm (React)
+    npm install @tanstack/react-query
+    ```
+    ```bash yarn (React)
+    yarn add @tanstack/react-query
+    ```
+    ```bash pnpm (React)
+    pnpm add @tanstack/react-query
+    ```
+    ```bash npm (Vue)
+    npm install @tanstack/vue-query
+    ```
+    ```bash npm (Solid)
+    npm install @tanstack/solid-query
+    ```
+    ```bash npm (Svelte)
+    npm install @tanstack/svelte-query
+    ```
+    ```bash npm (Angular)
+    npm install @tanstack/angular-query-experimental
+    ```
+    </CodeGroup>
+  </Step>
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+  <Step title="Set up the Query Client">
+    Initialize the QueryClient and wrap your application with the provider:
+
+    ```tsx React
+    import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+    const queryClient = new QueryClient()
+
+    function App() {
+      return (
+        <QueryClientProvider client={queryClient}>
+          {/* Your app components */}
+        </QueryClientProvider>
+      )
+    }
+    ```
+  </Step>
+
+  <Step title="Create your first query">
+    Use the query hook to fetch and cache data:
+
+    ```tsx React
+    import { useQuery } from '@tanstack/react-query'
+
+    function Todos() {
+      const { data, isLoading, error } = useQuery({
+        queryKey: ['todos'],
+        queryFn: () => fetch('/api/todos').then(res => res.json())
+      })
+
+      if (isLoading) return <div>Loading...</div>
+      if (error) return <div>Error: {error.message}</div>
+
+      return (
+        <ul>
+          {data.map(todo => (
+            <li key={todo.id}>{todo.title}</li>
+          ))}
+        </ul>
+      )
+    }
+    ```
+
+    <Note>
+    TanStack Query automatically handles caching, background refetching, and data synchronization out of the box!
+    </Note>
+  </Step>
+</Steps>
+
+## Key Features
+
+<CardGroup cols={3}>
+  <Card title="Framework Agnostic" icon="layer-group" href="/frameworks/react">
+    Core library with official adapters for React, Vue, Solid, Svelte, and Angular
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Automatic Caching" icon="database" href="/concepts/caching">
+    Smart caching with background refetching and stale-while-revalidate strategy
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="TypeScript First" icon="code" href="/guides/typescript">
+    Complete type safety with full TypeScript support and inference
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Devtools" icon="wrench" href="/plugins/devtools">
+    Built-in devtools for debugging queries and cache state
   </Card>
-</Columns>
+  <Card title="SSR Support" icon="server" href="/guides/ssr">
+    First-class support for server-side rendering and streaming
+  </Card>
+  <Card title="Tiny Bundle Size" icon="feather" href="/installation">
+    Zero dependencies with minimal bundle footprint
+  </Card>
+</CardGroup>
 
-## Create beautiful pages
+## Explore by Framework
 
-Everything you need to create world-class documentation.
+Choose your framework to get started with specific integration guides and examples.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="React Query" icon="react" href="/frameworks/react">
+    The most popular data fetching library for React applications
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Vue Query" icon="vuejs" href="/frameworks/vue">
+    Powerful data synchronization for Vue 2 and Vue 3
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Solid Query" icon="s" href="/frameworks/solid">
+    Reactive data fetching for SolidJS applications
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="Svelte Query" icon="s" href="/frameworks/svelte">
+    Elegant data management for Svelte and SvelteKit
   </Card>
-</Columns>
+  <Card title="Angular Query" icon="angular" href="/frameworks/angular">
+    Signal-based data fetching for Angular applications
+  </Card>
+</CardGroup>
 
-## Need inspiration?
+## Core Concepts
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+Master the fundamental concepts that power TanStack Query.
+
+<CardGroup cols={2}>
+  <Card title="Queries" icon="circle-question" href="/concepts/queries">
+    Learn how to fetch and cache data with queries
+  </Card>
+  <Card title="Mutations" icon="pen-to-square" href="/concepts/mutations">
+    Update server state with mutations and optimistic updates
+  </Card>
+  <Card title="Query Keys" icon="key" href="/concepts/query-keys">
+    Understand how query keys enable powerful cache management
+  </Card>
+  <Card title="Caching" icon="boxes-stacked" href="/concepts/caching">
+    Deep dive into TanStack Query's caching mechanisms
+  </Card>
+</CardGroup>
+
+## Advanced Features
+
+Take your data fetching to the next level with advanced patterns and optimizations.
+
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+  <a href="/guides/infinite-queries" className="group block rounded-2xl border border-gray-200 dark:border-gray-800 hover:border-[#eab968] dark:hover:border-[#eab968] overflow-hidden transition-colors no-underline">
+    <div className="p-6">
+      <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">Infinite Queries</h3>
+      <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Implement pagination and infinite scrolling with ease</p>
+      <div className="flex items-center text-sm text-gray-500 dark:text-gray-500 group-hover:text-[#eab968]">
+        Learn more
+        <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </div>
+    </div>
+  </a>
+
+  <a href="/guides/optimistic-updates" className="group block rounded-2xl border border-gray-200 dark:border-gray-800 hover:border-[#eab968] dark:hover:border-[#eab968] overflow-hidden transition-colors no-underline">
+    <div className="p-6">
+      <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">Optimistic Updates</h3>
+      <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Update UI instantly before server confirmation</p>
+      <div className="flex items-center text-sm text-gray-500 dark:text-gray-500 group-hover:text-[#eab968]">
+        Learn more
+        <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </div>
+    </div>
+  </a>
+
+  <a href="/guides/prefetching" className="group block rounded-2xl border border-gray-200 dark:border-gray-800 hover:border-[#eab968] dark:hover:border-[#eab968] overflow-hidden transition-colors no-underline">
+    <div className="p-6">
+      <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">Prefetching</h3>
+      <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Load data before users need it for instant experiences</p>
+      <div className="flex items-center text-sm text-gray-500 dark:text-gray-500 group-hover:text-[#eab968]">
+        Learn more
+        <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </div>
+    </div>
+  </a>
+
+  <a href="/guides/suspense" className="group block rounded-2xl border border-gray-200 dark:border-gray-800 hover:border-[#eab968] dark:hover:border-[#eab968] overflow-hidden transition-colors no-underline">
+    <div className="p-6">
+      <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">React Suspense</h3>
+      <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Integrate seamlessly with React 18 Suspense boundaries</p>
+      <div className="flex items-center text-sm text-gray-500 dark:text-gray-500 group-hover:text-[#eab968]">
+        Learn more
+        <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </div>
+    </div>
+  </a>
+</div>
+
+## Community & Support
+
+Join thousands of developers using TanStack Query in production.
+
+<CardGroup cols={3}>
+  <Card title="GitHub Discussions" icon="github" href="https://github.com/TanStack/query/discussions">
+    Ask questions and share ideas with the community
+  </Card>
+  <Card title="Discord" icon="discord" href="https://discord.com/invite/WrRKjPJ">
+    Chat with other developers in real-time
+  </Card>
+  <Card title="Contributing" icon="code-pull-request" href="/community/contributing">
+    Help improve TanStack Query for everyone
+  </Card>
+</CardGroup>
+
+<div className="mt-16 p-8 rounded-2xl bg-gradient-to-r from-[#eab968]/10 to-[#4a9261]/10 dark:from-[#eab968]/5 dark:to-[#4a9261]/5 border border-gray-200 dark:border-gray-800">
+  <div className="text-center max-w-2xl mx-auto">
+    <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-4">
+      Ready to get started?
+    </h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400 mb-6">
+      Install TanStack Query and start building better data-driven applications today.
+    </p>
+    <a
+      href="/quick-start"
+      className="inline-flex items-center px-6 py-3 rounded-lg bg-[#eab968] text-white font-semibold hover:bg-[#d9a857] transition-colors"
+    >
+      Get Started Now
+    </a>
+  </div>
+</div>

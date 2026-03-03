@@ -1,0 +1,132 @@
+---
+title: useIsFetching
+description: Vue composable for tracking the number of queries currently fetching
+---
+
+The `useIsFetching` composable returns the number of queries that are currently fetching. Useful for showing a global loading indicator.
+
+## Import
+
+```vue
+import { useIsFetching } from '@tanstack/vue-query'
+```
+
+## Signature
+
+```ts
+function useIsFetching(
+  filters?: QueryFilters,
+  queryClient?: QueryClient,
+): Ref<number>
+```
+
+## Parameters
+
+<ParamField path="filters" type="QueryFilters" default="{}">
+  Optional filters to narrow down which queries to count. Can be a reactive object or a function returning filters.
+
+  <Expandable title="properties">
+    <ParamField path="queryKey" type="QueryKey">
+      Filter queries by query key.
+
+      ```ts
+      { queryKey: ['todos'] }
+      ```
+    </ParamField>
+
+    <ParamField path="exact" type="boolean">
+      If `true`, only queries with an exact query key match will be counted.
+    </ParamField>
+
+    <ParamField path="predicate" type="(query: Query) => boolean">
+      Custom function to filter queries.
+
+      ```ts
+      { predicate: (query) => query.state.status === 'pending' }
+      ```
+    </ParamField>
+
+    <ParamField path="type" type="'active' | 'inactive' | 'all'">
+      Filter queries by their type.
+    </ParamField>
+
+    <ParamField path="stale" type="boolean">
+      Filter queries by their stale state.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="queryClient" type="QueryClient">
+  Custom QueryClient instance.
+</ParamField>
+
+## Returns
+
+<ResponseField name="result" type="Ref<number>">
+  A reactive ref containing the number of queries currently fetching that match the filters.
+</ResponseField>
+
+## Example
+
+```vue
+<script setup>
+import { useIsFetching } from '@tanstack/vue-query'
+
+const isFetching = useIsFetching()
+</script>
+
+<template>
+  <div>
+    <div v-if="isFetching" class="global-loader">
+      {{ isFetching }} queries fetching...
+    </div>
+  </div>
+</template>
+```
+
+## With Filters
+
+```vue
+<script setup>
+import { useIsFetching } from '@tanstack/vue-query'
+
+// Only count fetching queries with 'todos' in the query key
+const todosFetching = useIsFetching({ queryKey: ['todos'] })
+
+// Count all active fetching queries
+const activeFetching = useIsFetching({ type: 'active' })
+</script>
+
+<template>
+  <div>
+    <div v-if="todosFetching">Loading todos...</div>
+    <div class="status">{{ activeFetching }} active queries</div>
+  </div>
+</template>
+```
+
+## Reactive Filters
+
+```vue
+<script setup>
+import { useIsFetching } from '@tanstack/vue-query'
+import { ref, computed } from 'vue'
+
+const selectedCategory = ref('todos')
+
+// Pass a function that returns reactive filters
+const categoryFetching = useIsFetching(() => ({
+  queryKey: [selectedCategory.value]
+}))
+</script>
+
+<template>
+  <div>
+    <select v-model="selectedCategory">
+      <option value="todos">Todos</option>
+      <option value="users">Users</option>
+    </select>
+    <div v-if="categoryFetching">Loading {{ selectedCategory }}...</div>
+  </div>
+</template>
+```

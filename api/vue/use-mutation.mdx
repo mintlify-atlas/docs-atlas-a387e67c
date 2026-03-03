@@ -1,0 +1,230 @@
+---
+title: useMutation
+description: Vue composable for performing mutations with automatic state management
+---
+
+The `useMutation` composable is used for creating, updating, and deleting data. Unlike queries, mutations are not automatically executed and require manual invocation.
+
+## Import
+
+```vue
+import { useMutation } from '@tanstack/vue-query'
+```
+
+## Signature
+
+```ts
+function useMutation<
+  TData = unknown,
+  TError = DefaultError,
+  TVariables = void,
+  TOnMutateResult = unknown,
+>(
+  mutationOptions: UseMutationOptions<TData, TError, TVariables, TOnMutateResult>,
+  queryClient?: QueryClient,
+): UseMutationReturnType<TData, TError, TVariables, TOnMutateResult>
+```
+
+## Type Parameters
+
+- `TData` - The type of data returned by the mutation function
+- `TError` - The type of error that can be thrown (defaults to `DefaultError`)
+- `TVariables` - The type of variables passed to the mutation function (defaults to `void`)
+- `TOnMutateResult` - The type returned by the `onMutate` callback (defaults to `unknown`)
+
+## Parameters
+
+<ParamField path="mutationOptions" type="UseMutationOptions" required>
+  Mutation configuration object. Can be a plain object or a function that returns options.
+
+  <Expandable title="properties">
+    <ParamField path="mutationFn" type="(variables: TVariables) => Promise<TData>" required>
+      The function that performs the mutation. Receives the variables passed to `mutate`.
+
+      ```ts
+      mutationFn: async (newTodo) => {
+        const response = await fetch('/api/todos', {
+          method: 'POST',
+          body: JSON.stringify(newTodo),
+        })
+        return response.json()
+      }
+      ```
+    </ParamField>
+
+    <ParamField path="mutationKey" type="MutationKey">
+      Optional unique key for the mutation. Used for mutation caching and deduplication.
+    </ParamField>
+
+    <ParamField path="onMutate" type="(variables: TVariables) => Promise<TOnMutateResult> | TOnMutateResult">
+      Callback fired before the mutation function is executed. Useful for optimistic updates.
+
+      ```ts
+      onMutate: async (newTodo) => {
+        await queryClient.cancelQueries({ queryKey: ['todos'] })
+        const previousTodos = queryClient.getQueryData(['todos'])
+        queryClient.setQueryData(['todos'], (old) => [...old, newTodo])
+        return { previousTodos }
+      }
+      ```
+    </ParamField>
+
+    <ParamField path="onSuccess" type="(data: TData, variables: TVariables, context: TOnMutateResult) => Promise<unknown> | unknown">
+      Callback fired when the mutation succeeds.
+
+      ```ts
+      onSuccess: (data, variables, context) => {
+        queryClient.invalidateQueries({ queryKey: ['todos'] })
+      }
+      ```
+    </ParamField>
+
+    <ParamField path="onError" type="(error: TError, variables: TVariables, context: TOnMutateResult | undefined) => Promise<unknown> | unknown">
+      Callback fired when the mutation encounters an error.
+
+      ```ts
+      onError: (err, newTodo, context) => {
+        if (context?.previousTodos) {
+          queryClient.setQueryData(['todos'], context.previousTodos)
+        }
+      }
+      ```
+    </ParamField>
+
+    <ParamField path="onSettled" type="(data: TData | undefined, error: TError | null, variables: TVariables, context: TOnMutateResult | undefined) => Promise<unknown> | unknown">
+      Callback fired when the mutation is either successful or encounters an error.
+    </ParamField>
+
+    <ParamField path="retry" type="boolean | number | ((failureCount: number, error: TError) => boolean)" default="0">
+      Number of times to retry the mutation on failure.
+    </ParamField>
+
+    <ParamField path="retryDelay" type="number | ((failureCount: number, error: TError) => number)">
+      Delay in milliseconds between retry attempts.
+    </ParamField>
+
+    <ParamField path="gcTime" type="number" default="300000">
+      The time in milliseconds that unused/inactive mutation data remains in memory.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="queryClient" type="QueryClient">
+  Custom QueryClient instance. If not provided, the one from the nearest context will be used.
+</ParamField>
+
+## Returns
+
+Returns reactive refs with the mutation state and mutation functions:
+
+<ResponseField name="data" type="Ref<TData | undefined>">
+  The data returned by the mutation function.
+</ResponseField>
+
+<ResponseField name="error" type="Ref<TError | null>">
+  The error object if the mutation failed.
+</ResponseField>
+
+<ResponseField name="status" type="Ref<'idle' | 'pending' | 'error' | 'success'>">
+  The current status of the mutation.
+</ResponseField>
+
+<ResponseField name="isPending" type="Ref<boolean>">
+  `true` if the mutation is currently executing.
+</ResponseField>
+
+<ResponseField name="isIdle" type="Ref<boolean>">
+  `true` if the mutation has not been executed yet.
+</ResponseField>
+
+<ResponseField name="isError" type="Ref<boolean>">
+  `true` if the mutation has errored.
+</ResponseField>
+
+<ResponseField name="isSuccess" type="Ref<boolean>">
+  `true` if the mutation has successfully completed.
+</ResponseField>
+
+<ResponseField name="mutate" type="(variables: TVariables, options?: MutateOptions) => void">
+  Function to trigger the mutation. This is a synchronous function that doesn't return a promise.
+</ResponseField>
+
+<ResponseField name="mutateAsync" type="(variables: TVariables, options?: MutateOptions) => Promise<TData>">
+  Function to trigger the mutation that returns a promise.
+</ResponseField>
+
+<ResponseField name="reset" type="() => void">
+  Function to reset the mutation state to its initial state.
+</ResponseField>
+
+## Example
+
+```vue
+<script setup>
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+import { ref } from 'vue'
+
+const queryClient = useQueryClient()
+const newTodoTitle = ref('')
+
+const { mutate, isPending, isError, error } = useMutation({
+  mutationFn: async (newTodo) => {
+    const response = await fetch('https://api.example.com/todos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newTodo),
+    })
+    if (!response.ok) throw new Error('Failed to create todo')
+    return response.json()
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['todos'] })
+    newTodoTitle.value = ''
+  },
+})
+
+const handleSubmit = () => {
+  mutate({ title: newTodoTitle.value, completed: false })
+}
+</script>
+
+<template>
+  <div>
+    <input v-model="newTodoTitle" placeholder="Enter todo title" />
+    <button @click="handleSubmit" :disabled="isPending">
+      {{ isPending ? 'Creating...' : 'Create Todo' }}
+    </button>
+    <div v-if="isError">Error: {{ error.message }}</div>
+  </div>
+</template>
+```
+
+## Optimistic Updates
+
+```vue
+<script setup>
+import { useMutation, useQueryClient } from '@tanstack/vue-query'
+
+const queryClient = useQueryClient()
+
+const { mutate } = useMutation({
+  mutationFn: updateTodo,
+  onMutate: async (newTodo) => {
+    await queryClient.cancelQueries({ queryKey: ['todos'] })
+    const previousTodos = queryClient.getQueryData(['todos'])
+    queryClient.setQueryData(['todos'], (old) => {
+      return old.map(todo => 
+        todo.id === newTodo.id ? newTodo : todo
+      )
+    })
+    return { previousTodos }
+  },
+  onError: (err, newTodo, context) => {
+    queryClient.setQueryData(['todos'], context.previousTodos)
+  },
+  onSettled: () => {
+    queryClient.invalidateQueries({ queryKey: ['todos'] })
+  },
+})
+</script>
+```

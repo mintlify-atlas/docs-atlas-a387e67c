@@ -1,0 +1,259 @@
+---
+title: QueryClient
+description: Vue Query's QueryClient for managing query and mutation cache
+---
+
+The `QueryClient` is the core class that manages the query and mutation cache for Vue Query. It extends the base QueryClient from `@tanstack/query-core` with Vue-specific features.
+
+## Import
+
+```vue
+import { QueryClient } from '@tanstack/vue-query'
+```
+
+## Constructor
+
+```ts
+const queryClient = new QueryClient(config?: QueryClientConfig)
+```
+
+### Config
+
+<ParamField path="config" type="QueryClientConfig">
+  Configuration object for the QueryClient.
+
+  <Expandable title="properties">
+    <ParamField path="queryCache" type="QueryCache">
+      Custom QueryCache instance. If not provided, a new one will be created.
+    </ParamField>
+
+    <ParamField path="mutationCache" type="MutationCache">
+      Custom MutationCache instance. If not provided, a new one will be created.
+    </ParamField>
+
+    <ParamField path="defaultOptions" type="DefaultOptions">
+      Default options for queries and mutations.
+
+      ```ts
+      defaultOptions: {
+        queries: {
+          staleTime: 60 * 1000,
+          gcTime: 10 * 60 * 1000,
+        },
+        mutations: {
+          retry: 1,
+        },
+      }
+      ```
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Properties
+
+<ResponseField name="isRestoring" type="Ref<boolean>">
+  Vue-specific property that tracks whether queries are being restored from persisted state.
+</ResponseField>
+
+## Methods
+
+All methods accept Vue refs or reactive values for their parameters.
+
+### Query Data Methods
+
+<ResponseField name="getQueryData" type="<TData = unknown>(queryKey: MaybeRefDeep<QueryKey>) => TData | undefined">
+  Returns the cached data for a query. Automatically unwraps Vue refs.
+
+  ```vue
+  const data = queryClient.getQueryData(['todos'])
+  const data = queryClient.getQueryData(ref(['todos', todoId]))
+  ```
+</ResponseField>
+
+<ResponseField name="setQueryData" type="<TData>(queryKey: MaybeRefDeep<QueryKey>, updater: Updater<TData | undefined, TData | undefined>, options?: MaybeRefDeep<SetDataOptions>) => TData | undefined">
+  Updates the cached data for a query.
+
+  ```vue
+  // Set data directly
+  queryClient.setQueryData(['todos'], newTodos)
+
+  // Update with function
+  queryClient.setQueryData(['todos'], (old) => [...old, newTodo])
+  ```
+</ResponseField>
+
+<ResponseField name="getQueriesData" type="<TData = unknown>(filters: MaybeRefDeep<QueryFilters>) => Array<[QueryKey, TData | undefined]>">
+  Returns cached data for multiple queries matching the filters.
+
+  ```vue
+  const allTodosData = queryClient.getQueriesData({ queryKey: ['todos'] })
+  ```
+</ResponseField>
+
+<ResponseField name="setQueriesData" type="<TData>(filters: MaybeRefDeep<QueryFilters>, updater: Updater<TData | undefined, TData | undefined>, options?: MaybeRefDeep<SetDataOptions>) => Array<[QueryKey, TData | undefined]>">
+  Updates cached data for multiple queries matching the filters.
+
+  ```vue
+  queryClient.setQueriesData(
+    { queryKey: ['todos'] },
+    (old) => ({ ...old, completed: true })
+  )
+  ```
+</ResponseField>
+
+### Query State Methods
+
+<ResponseField name="getQueryState" type="<TData = unknown, TError = DefaultError>(queryKey: MaybeRefDeep<QueryKey>) => QueryState<TData, TError> | undefined">
+  Returns the full state object for a query.
+
+  ```vue
+  const state = queryClient.getQueryState(['todos'])
+  console.log(state?.status, state?.dataUpdatedAt)
+  ```
+</ResponseField>
+
+### Invalidation Methods
+
+<ResponseField name="invalidateQueries" type="(filters?: MaybeRefDeep<InvalidateQueryFilters>, options?: MaybeRefDeep<InvalidateOptions>) => Promise<void>">
+  Invalidates queries and triggers refetches. Vue Query enhances this with reactive filter support.
+
+  ```vue
+  // Invalidate all queries
+  await queryClient.invalidateQueries()
+
+  // Invalidate specific queries
+  await queryClient.invalidateQueries({ queryKey: ['todos'] })
+
+  // With reactive filter
+  const category = ref('todos')
+  await queryClient.invalidateQueries({ queryKey: [category] })
+  ```
+</ResponseField>
+
+<ResponseField name="refetchQueries" type="(filters?: MaybeRefDeep<RefetchQueryFilters>, options?: MaybeRefDeep<RefetchOptions>) => Promise<void>">
+  Refetches queries matching the filters.
+
+  ```vue
+  await queryClient.refetchQueries({ queryKey: ['todos'] })
+  await queryClient.refetchQueries({ type: 'active', stale: true })
+  ```
+</ResponseField>
+
+<ResponseField name="resetQueries" type="(filters?: MaybeRefDeep<QueryFilters>, options?: MaybeRefDeep<ResetOptions>) => Promise<void>">
+  Resets queries to their initial state.
+
+  ```vue
+  await queryClient.resetQueries({ queryKey: ['todos'] })
+  ```
+</ResponseField>
+
+<ResponseField name="removeQueries" type="(filters?: MaybeRefDeep<QueryFilters>) => void">
+  Removes queries from the cache.
+
+  ```vue
+  queryClient.removeQueries({ queryKey: ['todos'] })
+  ```
+</ResponseField>
+
+<ResponseField name="cancelQueries" type="(filters?: MaybeRefDeep<QueryFilters>, options?: MaybeRefDeep<CancelOptions>) => Promise<void>">
+  Cancels ongoing queries.
+
+  ```vue
+  await queryClient.cancelQueries({ queryKey: ['todos'] })
+  ```
+</ResponseField>
+
+### Fetch Methods
+
+<ResponseField name="fetchQuery" type="<TData>(options: MaybeRefDeep<FetchQueryOptions>) => Promise<TData>">
+  Fetches a query and returns the data. Useful for prefetching or server-side rendering.
+
+  ```vue
+  const data = await queryClient.fetchQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+  })
+  ```
+</ResponseField>
+
+<ResponseField name="prefetchQuery" type="(options: MaybeRefDeep<FetchQueryOptions>) => Promise<void>">
+  Prefetches a query and stores it in the cache.
+
+  ```vue
+  await queryClient.prefetchQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+  })
+  ```
+</ResponseField>
+
+<ResponseField name="fetchInfiniteQuery" type="<TData>(options: MaybeRefDeep<FetchInfiniteQueryOptions>) => Promise<InfiniteData<TData>>">
+  Fetches an infinite query.
+
+  ```vue
+  const data = await queryClient.fetchInfiniteQuery({
+    queryKey: ['todos'],
+    queryFn: fetchTodos,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+  })
+  ```
+</ResponseField>
+
+<ResponseField name="prefetchInfiniteQuery" type="(options: MaybeRefDeep<FetchInfiniteQueryOptions>) => Promise<void>">
+  Prefetches an infinite query.
+</ResponseField>
+
+### Query Status Methods
+
+<ResponseField name="isFetching" type="(filters?: MaybeRefDeep<QueryFilters>) => number">
+  Returns the number of queries currently fetching.
+
+  ```vue
+  const count = queryClient.isFetching()
+  const todosCount = queryClient.isFetching({ queryKey: ['todos'] })
+  ```
+</ResponseField>
+
+<ResponseField name="isMutating" type="(filters?: MaybeRefDeep<MutationFilters>) => number">
+  Returns the number of mutations currently pending.
+
+  ```vue
+  const count = queryClient.isMutating()
+  ```
+</ResponseField>
+
+## Example
+
+```vue
+<script setup>
+import { QueryClient } from '@tanstack/vue-query'
+import { ref } from 'vue'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60 * 1000,
+      gcTime: 10 * 60 * 1000,
+    },
+  },
+})
+
+// Use reactive values
+const todoId = ref(1)
+const todoData = queryClient.getQueryData(['todo', todoId])
+
+// Invalidate with reactive filters
+const invalidateTodo = async () => {
+  await queryClient.invalidateQueries({ queryKey: ['todo', todoId] })
+}
+
+// Prefetch
+const prefetchNext = async () => {
+  await queryClient.prefetchQuery({
+    queryKey: ['todo', todoId.value + 1],
+    queryFn: () => fetchTodo(todoId.value + 1),
+  })
+}
+</script>
+```

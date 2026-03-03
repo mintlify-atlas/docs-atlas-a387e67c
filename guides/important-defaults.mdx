@@ -1,0 +1,221 @@
+---
+title: Important Defaults
+description: Understanding TanStack Query's default behaviors and how they affect your application
+---
+
+TanStack Query comes with aggressive but sensible defaults that are designed to provide an optimal user experience right out of the box. Understanding these defaults is crucial for working effectively with the library.
+
+## Key Default Behaviors
+
+### Queries Are Stale Immediately
+
+By default, queries are considered stale immediately after they're fetched:
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+
+function Posts() {
+  const { data } = useQuery({
+    queryKey: ['posts'],
+    queryFn: fetchPosts,
+    // staleTime: 0 (default)
+  })
+}
+```
+
+This means queries will refetch in the background when:
+- New instances of the query mount
+- The window is refocused
+- The network is reconnected
+- A refetch interval is configured
+
+### Background Refetching Is Automatic
+
+TanStack Query automatically refetches stale queries in several scenarios:
+
+```tsx
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: true, // default
+      refetchOnReconnect: true, // default
+      refetchOnMount: true, // default
+    },
+  },
+})
+```
+
+**What this means:**
+- **Window Focus**: When users return to your tab, stale queries refetch
+- **Network Reconnect**: When network reconnects, stale queries refetch
+- **Component Mount**: When new instances mount, stale queries refetch
+
+### Cache Time vs Stale Time
+
+Two critical timing concepts that are often confused:
+
+```tsx
+useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  staleTime: 5 * 60 * 1000, // 5 minutes
+  gcTime: 10 * 60 * 1000, // 10 minutes (previously cacheTime)
+})
+```
+
+**staleTime** (default: 0)
+- Time until data is considered stale
+- While fresh, queries won't refetch in the background
+- Set to `Infinity` to keep data fresh forever
+
+**gcTime** (default: 5 minutes)
+- Time until inactive queries are garbage collected
+- Keeps unused data in memory for instant back/forward navigation
+- Set to `Infinity` to never garbage collect
+
+<Warning>
+  **Common Mistake**: Setting a long `gcTime` without setting `staleTime` will still refetch data constantly, just keep it in cache longer. If you want to reduce refetches, increase `staleTime`.
+</Warning>
+
+### Queries Retry Failed Requests
+
+By default, failed queries retry 3 times with exponential backoff:
+
+```tsx
+useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  retry: 3, // default (false for Server Components)
+  retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+})
+```
+
+This makes your app resilient to temporary network issues.
+
+### Query Results Are Structurally Shared
+
+TanStack Query structurally shares query results to optimize re-renders:
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['todos'],
+  queryFn: fetchTodos,
+  structuralSharing: true, // default
+})
+```
+
+This means if your data hasn't actually changed (deep equality), the same reference is maintained, preventing unnecessary re-renders.
+
+## Adjusting Defaults
+
+### Global Defaults
+
+Set defaults for all queries at the QueryClient level:
+
+```tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60 * 1000, // 1 minute
+      gcTime: 5 * 60 * 1000, // 5 minutes
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+})
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      {/* Your app */}
+    </QueryClientProvider>
+  )
+}
+```
+
+### Per-Query Overrides
+
+Override defaults for specific queries:
+
+```tsx
+// Critical data that should stay fresh
+const { data: user } = useQuery({
+  queryKey: ['user', userId],
+  queryFn: () => fetchUser(userId),
+  staleTime: 0, // Always refetch
+  refetchOnWindowFocus: true,
+})
+
+// Static data that rarely changes
+const { data: countries } = useQuery({
+  queryKey: ['countries'],
+  queryFn: fetchCountries,
+  staleTime: Infinity, // Never stale
+  gcTime: Infinity, // Never garbage collect
+})
+```
+
+## Common Patterns
+
+### Reducing Network Requests
+
+If you're seeing too many network requests, increase `staleTime`:
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['articles'],
+  queryFn: fetchArticles,
+  staleTime: 5 * 60 * 1000, // Don't refetch for 5 minutes
+})
+```
+
+### Instant Navigation
+
+For instant back/forward navigation, keep data cached longer:
+
+```tsx
+const { data } = useQuery({
+  queryKey: ['post', postId],
+  queryFn: () => fetchPost(postId),
+  staleTime: 30 * 1000, // 30 seconds
+  gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+})
+```
+
+### Disabling Auto-Refetch
+
+For truly static data or when you need manual control:
+
+```tsx
+const { data, refetch } = useQuery({
+  queryKey: ['config'],
+  queryFn: fetchConfig,
+  staleTime: Infinity,
+  refetchOnWindowFocus: false,
+  refetchOnReconnect: false,
+  refetchOnMount: false,
+})
+
+// Manually refetch when needed
+<button onClick={() => refetch()}>Refresh Config</button>
+```
+
+<Warning>
+  **Performance Tip**: Don't disable all auto-refetching globally. TanStack Query's defaults are designed to keep your UI in sync with the server. Instead, adjust `staleTime` per query based on how often your data actually changes.
+</Warning>
+
+## Server-Side Rendering
+
+Defaults differ slightly for server components:
+
+```tsx
+// Server Components have different defaults:
+// - retry: false (no retries)
+// - refetchOnWindowFocus: false
+// - refetchOnReconnect: false
+// - refetchOnMount: false
+```
+
+This prevents unnecessary fetches during SSR while maintaining the benefits on the client.

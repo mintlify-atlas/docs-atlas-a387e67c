@@ -1,0 +1,351 @@
+---
+title: Contributing to TanStack Query
+description: Learn how to contribute to TanStack Query through issues, features, code, and documentation
+---
+
+We welcome contributions to TanStack Query! This guide will help you get started with contributing to the project.
+
+## Questions and Support
+
+Before contributing, please note:
+
+<Warning>
+  For questions about implementation, help, or support, please use [GitHub Discussions](https://github.com/TanStack/query/discussions) instead of opening an issue. Issues opened for questions will be closed and redirected to discussions.
+</Warning>
+
+## Reporting Issues
+
+If you've found a bug:
+
+1. Search [existing issues](https://github.com/TanStack/query/issues) first to avoid duplicates
+2. If none exist, [file a new issue](https://github.com/TanStack/query/issues/new/choose)
+3. Provide a clear description and reproduction steps
+4. Include your environment details (React version, TanStack Query version, etc.)
+
+<Note>
+  Issues identified as implementation questions or non-issues will be redirected to [GitHub Discussions](https://github.com/TanStack/query/discussions).
+</Note>
+
+## Suggesting Features
+
+To suggest a new feature:
+
+1. Check if a similar feature request already exists
+2. Create an issue to discuss the use case
+3. Engage in the discussion about how it could be implemented
+4. Wait for maintainer approval before starting implementation
+
+## Development Setup
+
+<Warning>
+  TanStack Query uses **symlink-based** configuration files. For smooth development, we recommend developing in an environment that supports symlinks (Linux, macOS, or Windows Subsystem for Linux / WSL).
+</Warning>
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) - Use the version specified in `.nvmrc`
+- [pnpm](https://pnpm.io/) v10
+- [nvm](https://github.com/nvm-sh/nvm) (recommended for Node version management)
+
+### Initial Setup
+
+1. **Fork the repository** on GitHub
+
+2. **Clone your fork**
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/query.git
+   cd query
+   ```
+
+3. **Set Node version**
+   ```bash
+   nvm use
+   ```
+   
+   If you don't have the required version:
+   ```bash
+   nvm install
+   ```
+
+4. **Install dependencies**
+   ```bash
+   pnpm install
+   ```
+   
+   <Note>
+     If you encounter pnpm-related issues, run:
+     ```bash
+     corepack enable && corepack prepare
+     ```
+   </Note>
+
+5. **Build all packages**
+   ```bash
+   pnpm build:all
+   ```
+
+### Development Workflow
+
+**Start development mode** (watches for changes):
+```bash
+pnpm run watch
+```
+
+This will rebuild packages automatically as you make changes.
+
+## Making Changes
+
+1. **Create a branch**
+   ```bash
+   git checkout -b my-feature-branch
+   ```
+
+2. **Make your changes**
+   - Implement your feature or fix in `src/` directories
+   - Add tests for your changes
+   - Update documentation as needed
+
+3. **Test your changes**
+   ```bash
+   # Run all tests
+   pnpm test
+   
+   # Run tests for specific package
+   npx nx run @tanstack/react-query:test:lib
+   
+   # Run tests in watch mode
+   pnpm test:lib:dev
+   ```
+
+<Warning>
+  Always run tests from the **root directory** using `nx` commands. Running tests inside individual package folders can cause failures due to dependencies between packages.
+</Warning>
+
+4. **Lint your code**
+   ```bash
+   pnpm run test:eslint
+   ```
+
+5. **Create a changeset**
+   
+   If your changes should trigger a release:
+   ```bash
+   pnpm changeset
+   ```
+   
+   Follow the prompts to describe your changes. The changeset will be included in the changelog.
+   
+   <Note>
+     Skip this step if your changes only affect docs, examples, or internal tooling.
+   </Note>
+
+## Testing
+
+TanStack Query uses [Nx](https://nx.dev/) as its monorepo tool and [Vitest](https://vitest.dev/) for testing.
+
+### Run All Tests
+
+```bash
+pnpm test
+```
+
+### Run Tests for Specific Package
+
+```bash
+npx nx run @tanstack/react-query:test:lib
+npx nx run @tanstack/vue-query:test:lib
+npx nx run @tanstack/solid-query:test:lib
+```
+
+### Test in Watch Mode
+
+```bash
+pnpm run test:lib:dev
+```
+
+## Working with Documentation
+
+Documentation is hosted on [tanstack.com](https://tanstack.com), which is a separate repository.
+
+### Local Documentation Development
+
+1. **Set up the workspace**
+   ```bash
+   mkdir tanstack
+   cd tanstack
+   
+   # Clone both repositories
+   git clone git@github.com:TanStack/query.git
+   git clone git@github.com:TanStack/tanstack.com.git --depth=1 --single-branch --branch=main
+   ```
+
+   <Note>
+     Your directory structure should be:
+     ```
+     tanstack/
+       +-- query/
+       +-- tanstack.com/
+     ```
+   </Note>
+
+2. **Start the documentation site**
+   ```bash
+   cd tanstack.com
+   pnpm install
+   pnpm dev
+   ```
+
+3. **Visit the docs**
+   ```
+   http://localhost:3000/query/latest/docs/framework/react/overview
+   ```
+
+4. **Edit documentation**
+   - Make changes in `tanstack/query/docs/`
+   - The site will hot-reload with your changes
+
+<Warning>
+  If you add a new documentation page, you must update `docs/config.json` in the `TanStack/query` repository!
+</Warning>
+
+## Running Examples
+
+### Against Local Changes
+
+1. **Start watch mode** (from repository root):
+   ```bash
+   pnpm run watch
+   ```
+
+2. **Navigate to example**:
+   ```bash
+   cd examples/react/basic
+   ```
+
+3. **Run the example**:
+   ```bash
+   pnpm run dev
+   ```
+
+### Against Latest Release
+
+If you want to run an example without building locally, just follow the instructions in the example's README.md.
+
+## Pull Request Process
+
+1. **Commit your changes**
+   ```bash
+   git add .
+   git commit -m "feat: add new feature"
+   ```
+   
+   Use [Conventional Commits](https://www.conventionalcommits.org/) format:
+   - `feat:` - New feature
+   - `fix:` - Bug fix
+   - `docs:` - Documentation changes
+   - `refactor:` - Code refactoring
+   - `test:` - Test changes
+   - `chore:` - Maintenance tasks
+
+2. **Push to your fork**
+   ```bash
+   git push origin my-feature-branch
+   ```
+
+3. **Open a Pull Request** on GitHub
+
+4. **Address review feedback**
+   - Respond to reviewer comments
+   - Make requested changes
+   - Push updates to your branch
+
+<Note>
+  Maintainers will squash all commits when merging, so don't worry about having many small commits during development.
+</Note>
+
+## Changesets
+
+TanStack Query uses [Changesets](https://github.com/changesets/changesets) to manage releases.
+
+### When to Create a Changeset
+
+Create a changeset if your PR:
+- Adds a new feature (minor version)
+- Fixes a bug (patch version)
+- Makes breaking changes (major version)
+
+### When to Skip Changesets
+
+Skip changesets for:
+- Documentation updates
+- Example changes
+- Internal tooling updates
+- Style/formatting changes
+
+### Creating a Changeset
+
+```bash
+pnpm changeset
+```
+
+Follow the interactive prompts:
+1. Select packages to include
+2. Choose version bump type (patch/minor/major)
+3. Write a clear description for the changelog
+
+## Release Process
+
+Maintainers handle releases:
+
+1. When changesets are merged to `main`, a GitHub Action creates a "Version Packages" PR
+2. This PR aggregates all changesets and updates versions
+3. When merged, packages are automatically published to NPM
+
+## Code Style
+
+- Follow the existing code style
+- Use TypeScript for type safety
+- Write descriptive variable and function names
+- Add comments for complex logic
+- Keep functions small and focused
+
+## Testing Guidelines
+
+- Write tests for all new features
+- Write tests for bug fixes to prevent regressions
+- Aim for high test coverage
+- Test edge cases and error conditions
+- Use descriptive test names
+
+## Getting Help
+
+- **Questions**: [GitHub Discussions](https://github.com/TanStack/query/discussions)
+- **Bugs**: [GitHub Issues](https://github.com/TanStack/query/issues)
+- **Chat**: [Discord](https://tlinz.com/discord)
+- **Twitter**: [@tannerlinsley](https://twitter.com/tannerlinsley)
+
+## Online Development
+
+You can use [Gitpod](https://gitpod.io) for online development:
+
+[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/TanStack/query)
+
+Gitpod will automatically:
+- Clone the repository
+- Install dependencies
+- Build packages in watch mode
+
+## Code of Conduct
+
+<Info>
+  Be respectful and constructive in all interactions. We're all here to make TanStack Query better together!
+</Info>
+
+## Recognition
+
+Contributors are recognized in:
+- Release notes
+- GitHub contributor lists
+- The TanStack community
+
+Thank you for contributing to TanStack Query!

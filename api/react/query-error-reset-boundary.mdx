@@ -1,0 +1,398 @@
+---
+title: QueryErrorResetBoundary
+description: React component for resetting error boundaries when queries encounter errors
+---
+
+The `QueryErrorResetBoundary` component provides a boundary that can reset query errors. It's typically used with React Error Boundaries to allow users to retry failed queries.
+
+## Import
+
+```tsx
+import { QueryErrorResetBoundary } from '@tanstack/react-query'
+```
+
+## Signature
+
+```tsx
+function QueryErrorResetBoundary(
+  props: QueryErrorResetBoundaryProps
+): React.ReactElement
+
+interface QueryErrorResetBoundaryProps {
+  children: QueryErrorResetBoundaryFunction | React.ReactNode
+}
+
+type QueryErrorResetBoundaryFunction = (
+  value: QueryErrorResetBoundaryValue
+) => React.ReactNode
+
+interface QueryErrorResetBoundaryValue {
+  reset: () => void
+  isReset: () => boolean
+  clearReset: () => void
+}
+```
+
+## Props
+
+### children
+
+- **Type:** `QueryErrorResetBoundaryFunction | React.ReactNode`
+- **Required:** Yes
+
+Either React nodes or a function that receives the reset boundary value.
+
+When using a function:
+
+```tsx
+<QueryErrorResetBoundary>
+  {({ reset }) => (
+    <ErrorBoundary onReset={reset}>
+      <App />
+    </ErrorBoundary>
+  )}
+</QueryErrorResetBoundary>
+```
+
+## Context Value
+
+The boundary provides the following value through context:
+
+### reset()
+
+- **Type:** `() => void`
+
+Marks the boundary as reset. Call this when you want to reset error boundaries.
+
+### isReset()
+
+- **Type:** `() => boolean`
+
+Returns `true` if the boundary has been reset.
+
+### clearReset()
+
+- **Type:** `() => void`
+
+Clears the reset state. This is called automatically by queries.
+
+## useQueryErrorResetBoundary Hook
+
+You can access the reset boundary value using the hook:
+
+```tsx
+import { useQueryErrorResetBoundary } from '@tanstack/react-query'
+
+function MyComponent() {
+  const { reset } = useQueryErrorResetBoundary()
+
+  // Use reset when needed
+}
+```
+
+## Examples
+
+### Basic Usage with Error Boundary
+
+```tsx
+import { QueryErrorResetBoundary } from '@tanstack/react-query'
+import { ErrorBoundary } from 'react-error-boundary'
+
+function App() {
+  return (
+    <QueryErrorResetBoundary>
+      {({ reset }) => (
+        <ErrorBoundary
+          onReset={reset}
+          fallbackRender={({ resetErrorBoundary }) => (
+            <div>
+              There was an error!
+              <button onClick={resetErrorBoundary}>Try again</button>
+            </div>
+          )}
+        >
+          <Page />
+        </ErrorBoundary>
+      )}
+    </QueryErrorResetBoundary>
+  )
+}
+```
+
+### With Suspense and Error Boundary
+
+```tsx
+import { QueryErrorResetBoundary, useSuspenseQuery } from '@tanstack/react-query'
+import { ErrorBoundary } from 'react-error-boundary'
+import { Suspense } from 'react'
+
+function Post({ postId }: { postId: number }) {
+  const { data } = useSuspenseQuery({
+    queryKey: ['post', postId],
+    queryFn: () => fetchPost(postId),
+  })
+
+  return <div>{data.title}</div>
+}
+
+function App() {
+  return (
+    <QueryErrorResetBoundary>
+      {({ reset }) => (
+        <ErrorBoundary
+          onReset={reset}
+          fallbackRender={({ error, resetErrorBoundary }) => (
+            <div>
+              <h1>Error: {error.message}</h1>
+              <button onClick={resetErrorBoundary}>Retry</button>
+            </div>
+          )}
+        >
+          <Suspense fallback={<div>Loading...</div>}>
+            <Post postId={1} />
+          </Suspense>
+        </ErrorBoundary>
+      )}
+    </QueryErrorResetBoundary>
+  )
+}
+```
+
+### Nested Error Boundaries
+
+```tsx
+import { QueryErrorResetBoundary } from '@tanstack/react-query'
+import { ErrorBoundary } from 'react-error-boundary'
+
+function App() {
+  return (
+    <QueryErrorResetBoundary>
+      {({ reset }) => (
+        <ErrorBoundary onReset={reset} fallback={<GlobalError />}>
+          <Layout>
+            <QueryErrorResetBoundary>
+              {({ reset: resetSection }) => (
+                <ErrorBoundary
+                  onReset={resetSection}
+                  fallback={<SectionError />}
+                >
+                  <Section />
+                </ErrorBoundary>
+              )}
+            </QueryErrorResetBoundary>
+          </Layout>
+        </ErrorBoundary>
+      )}
+    </QueryErrorResetBoundary>
+  )
+}
+```
+
+### Using the Hook
+
+```tsx
+import {
+  QueryErrorResetBoundary,
+  useQueryErrorResetBoundary,
+} from '@tanstack/react-query'
+import { ErrorBoundary } from 'react-error-boundary'
+
+function ErrorFallback({ error }: { error: Error }) {
+  const { reset } = useQueryErrorResetBoundary()
+
+  return (
+    <div>
+      <h1>Something went wrong</h1>
+      <pre>{error.message}</pre>
+      <button onClick={reset}>Try again</button>
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <QueryErrorResetBoundary>
+      <ErrorBoundary FallbackComponent={ErrorFallback}>
+        <Page />
+      </ErrorBoundary>
+    </QueryErrorResetBoundary>
+  )
+}
+```
+
+### Without Function as Children
+
+```tsx
+import {
+  QueryErrorResetBoundary,
+  useQueryErrorResetBoundary,
+} from '@tanstack/react-query'
+import { ErrorBoundary } from 'react-error-boundary'
+
+function ErrorHandler({ children }: { children: React.ReactNode }) {
+  const { reset } = useQueryErrorResetBoundary()
+
+  return (
+    <ErrorBoundary
+      onReset={reset}
+      fallbackRender={({ resetErrorBoundary }) => (
+        <div>
+          <h1>Error occurred</h1>
+          <button onClick={resetErrorBoundary}>Reset</button>
+        </div>
+      )}
+    >
+      {children}
+    </ErrorBoundary>
+  )
+}
+
+function App() {
+  return (
+    <QueryErrorResetBoundary>
+      <ErrorHandler>
+        <Page />
+      </ErrorHandler>
+    </QueryErrorResetBoundary>
+  )
+}
+```
+
+### Multiple Suspense Queries
+
+```tsx
+import { QueryErrorResetBoundary, useSuspenseQuery } from '@tanstack/react-query'
+import { ErrorBoundary } from 'react-error-boundary'
+import { Suspense } from 'react'
+
+function User({ userId }: { userId: number }) {
+  const { data: user } = useSuspenseQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId),
+  })
+
+  const { data: posts } = useSuspenseQuery({
+    queryKey: ['posts', userId],
+    queryFn: () => fetchPosts(userId),
+  })
+
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <ul>
+        {posts.map((post) => (
+          <li key={post.id}>{post.title}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <QueryErrorResetBoundary>
+      {({ reset }) => (
+        <ErrorBoundary
+          onReset={reset}
+          fallbackRender={({ resetErrorBoundary }) => (
+            <div>
+              <p>Failed to load user data</p>
+              <button onClick={resetErrorBoundary}>Retry</button>
+            </div>
+          )}
+        >
+          <Suspense fallback={<div>Loading user...</div>}>
+            <User userId={1} />
+          </Suspense>
+        </ErrorBoundary>
+      )}
+    </QueryErrorResetBoundary>
+  )
+}
+```
+
+### Custom Error Display
+
+```tsx
+import { QueryErrorResetBoundary } from '@tanstack/react-query'
+import { ErrorBoundary } from 'react-error-boundary'
+
+function ErrorFallback({
+  error,
+  resetErrorBoundary,
+}: {
+  error: Error
+  resetErrorBoundary: () => void
+}) {
+  return (
+    <div role="alert" className="error-container">
+      <h2>Oops! Something went wrong</h2>
+      <details>
+        <summary>Error details</summary>
+        <pre style={{ color: 'red' }}>{error.message}</pre>
+        {error.stack && <pre>{error.stack}</pre>}
+      </details>
+      <button onClick={resetErrorBoundary}>Try again</button>
+    </div>
+  )
+}
+
+function App() {
+  return (
+    <QueryErrorResetBoundary>
+      {({ reset }) => (
+        <ErrorBoundary onReset={reset} FallbackComponent={ErrorFallback}>
+          <Page />
+        </ErrorBoundary>
+      )}
+    </QueryErrorResetBoundary>
+  )
+}
+```
+
+### Reset on Route Change
+
+```tsx
+import { QueryErrorResetBoundary } from '@tanstack/react-query'
+import { ErrorBoundary } from 'react-error-boundary'
+import { useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
+
+function App() {
+  const location = useLocation()
+
+  return (
+    <QueryErrorResetBoundary>
+      {({ reset }) => {
+        // Reset errors when route changes
+        useEffect(() => {
+          reset()
+        }, [location.pathname, reset])
+
+        return (
+          <ErrorBoundary onReset={reset} fallback={<ErrorPage />}>
+            <Routes />
+          </ErrorBoundary>
+        )
+      }}
+    </QueryErrorResetBoundary>
+  )
+}
+```
+
+## How It Works
+
+1. When a query throws an error (with `throwOnError: true` or in suspense queries), the Error Boundary catches it
+2. The user can trigger a reset by clicking a retry button
+3. The reset function marks the boundary as "reset"
+4. Queries that previously failed will retry when they detect the boundary has been reset
+5. The boundary automatically clears its reset state after queries retry
+
+## Notes
+
+- Works seamlessly with React Error Boundaries
+- Essential for suspense queries that throw errors
+- Can be nested for granular error recovery
+- The reset state is automatically cleared by queries after they retry
+- Compatible with all error boundary libraries (react-error-boundary, etc.)
+- Allows users to recover from transient errors without a full page reload

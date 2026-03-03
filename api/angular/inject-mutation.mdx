@@ -1,0 +1,279 @@
+---
+title: injectMutation
+description: Angular function for performing mutations with signal-based state management
+---
+
+The `injectMutation` function is used for creating, updating, and deleting data. Unlike queries, mutations are not automatically executed and require manual invocation.
+
+## Import
+
+```ts
+import { injectMutation } from '@tanstack/angular-query-experimental'
+```
+
+## Signature
+
+```ts
+function injectMutation<
+  TData = unknown,
+  TError = DefaultError,
+  TVariables = void,
+  TOnMutateResult = unknown,
+>(
+  injectMutationFn: () => CreateMutationOptions<TData, TError, TVariables, TOnMutateResult>,
+  options?: InjectMutationOptions,
+): CreateMutationResult<TData, TError, TVariables, TOnMutateResult>
+```
+
+## Type Parameters
+
+- `TData` - The type of data returned by the mutation function
+- `TError` - The type of error that can be thrown (defaults to `DefaultError`)
+- `TVariables` - The type of variables passed to the mutation function (defaults to `void`)
+- `TOnMutateResult` - The type returned by the `onMutate` callback (defaults to `unknown`)
+
+## Parameters
+
+<ParamField path="injectMutationFn" type="() => CreateMutationOptions" required>
+  A function that returns the mutation configuration object. Runs in a reactive context.
+
+  <Expandable title="properties">
+    <ParamField path="mutationFn" type="(variables: TVariables) => Promise<TData>" required>
+      The function that performs the mutation. Receives the variables passed to `mutate`.
+
+      ```ts
+      mutationFn: async (newTodo) => {
+        const response = this.http.post('/api/todos', newTodo)
+        return lastValueFrom(response)
+      }
+      ```
+    </ParamField>
+
+    <ParamField path="mutationKey" type="MutationKey">
+      Optional unique key for the mutation. Used for mutation caching and deduplication.
+    </ParamField>
+
+    <ParamField path="onMutate" type="(variables: TVariables) => Promise<TOnMutateResult> | TOnMutateResult">
+      Callback fired before the mutation function is executed. Useful for optimistic updates.
+    </ParamField>
+
+    <ParamField path="onSuccess" type="(data: TData, variables: TVariables, context: TOnMutateResult) => Promise<unknown> | unknown">
+      Callback fired when the mutation succeeds.
+    </ParamField>
+
+    <ParamField path="onError" type="(error: TError, variables: TVariables, context: TOnMutateResult | undefined) => Promise<unknown> | unknown">
+      Callback fired when the mutation encounters an error.
+    </ParamField>
+
+    <ParamField path="onSettled" type="(data: TData | undefined, error: TError | null, variables: TVariables, context: TOnMutateResult | undefined) => Promise<unknown> | unknown">
+      Callback fired when the mutation is either successful or encounters an error.
+    </ParamField>
+
+    <ParamField path="retry" type="boolean | number | ((failureCount: number, error: TError) => boolean)" default="0">
+      Number of times to retry the mutation on failure.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="options" type="InjectMutationOptions">
+  Additional configuration options.
+
+  <Expandable title="properties">
+    <ParamField path="injector" type="Injector">
+      The injector to use for creating the mutation.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Returns
+
+Returns a signal-based mutation result:
+
+<ResponseField name="data()" type="TData | undefined">
+  The data returned by the mutation function.
+</ResponseField>
+
+<ResponseField name="error()" type="TError | null">
+  The error object if the mutation failed.
+</ResponseField>
+
+<ResponseField name="status()" type="'idle' | 'pending' | 'error' | 'success'">
+  The current status of the mutation.
+</ResponseField>
+
+<ResponseField name="isPending()" type="boolean">
+  `true` if the mutation is currently executing.
+</ResponseField>
+
+<ResponseField name="isIdle()" type="boolean">
+  `true` if the mutation has not been executed yet.
+</ResponseField>
+
+<ResponseField name="isError()" type="boolean">
+  `true` if the mutation has errored.
+</ResponseField>
+
+<ResponseField name="isSuccess()" type="boolean">
+  `true` if the mutation has successfully completed.
+</ResponseField>
+
+<ResponseField name="mutate()" type="(variables: TVariables, options?: MutateOptions) => void">
+  Function to trigger the mutation. This is a synchronous function that doesn't return a promise.
+</ResponseField>
+
+<ResponseField name="mutateAsync()" type="(variables: TVariables, options?: MutateOptions) => Promise<TData>">
+  Function to trigger the mutation that returns a promise.
+</ResponseField>
+
+## Example
+
+```ts
+import { Component, inject, signal } from '@angular/core'
+import { HttpClient } from '@angular/common/http'
+import { injectMutation, injectQueryClient } from '@tanstack/angular-query-experimental'
+import { lastValueFrom } from 'rxjs'
+
+interface Todo {
+  title: string
+  completed: boolean
+}
+
+@Component({
+  selector: 'app-todo-form',
+  template: `
+    <input [(ngModel)]="title" placeholder="Enter todo" />
+    <button 
+      (click)="handleSubmit()" 
+      [disabled]="mutation.isPending()">
+      {{ mutation.isPending() ? 'Creating...' : 'Create Todo' }}
+    </button>
+    
+    @if (mutation.isError()) {
+      <div>Error: {{ mutation.error()?.message }}</div>
+    }
+  `,
+})
+export class TodoFormComponent {
+  #http = inject(HttpClient)
+  #queryClient = injectQueryClient()
+  
+  title = signal('')
+
+  mutation = injectMutation(() => ({
+    mutationFn: async (newTodo: Todo) => {
+      const response = this.#http.post<Todo>(
+        'https://api.example.com/todos',
+        newTodo
+      )
+      return lastValueFrom(response)
+    },
+    onSuccess: () => {
+      this.#queryClient.invalidateQueries({ queryKey: ['todos'] })
+      this.title.set('')
+    },
+  }))
+
+  handleSubmit() {
+    this.mutation.mutate({ 
+      title: this.title(), 
+      completed: false 
+    })
+  }
+}
+```
+
+## Optimistic Updates
+
+```ts
+import { Component, inject } from '@angular/core'
+import { injectMutation, injectQueryClient } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-todo-list',
+  template: `...`,
+})
+export class TodoListComponent {
+  #queryClient = injectQueryClient()
+
+  mutation = injectMutation(() => ({
+    mutationFn: updateTodo,
+    onMutate: async (updatedTodo) => {
+      await this.#queryClient.cancelQueries({ queryKey: ['todos'] })
+      const previousTodos = this.#queryClient.getQueryData(['todos'])
+      
+      this.#queryClient.setQueryData(['todos'], (old: Todo[]) => {
+        return old.map((todo) =>
+          todo.id === updatedTodo.id ? updatedTodo : todo
+        )
+      })
+      
+      return { previousTodos }
+    },
+    onError: (err, updatedTodo, context) => {
+      this.#queryClient.setQueryData(['todos'], context?.previousTodos)
+    },
+    onSettled: () => {
+      this.#queryClient.invalidateQueries({ queryKey: ['todos'] })
+    },
+  }))
+}
+```
+
+## With Async/Await
+
+```ts
+import { Component } from '@angular/core'
+import { injectMutation } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-example',
+  template: `
+    <button (click)="handleCreate()">Create</button>
+  `,
+})
+export class ExampleComponent {
+  mutation = injectMutation(() => ({
+    mutationFn: createTodo,
+  }))
+
+  async handleCreate() {
+    try {
+      const newTodo = await this.mutation.mutateAsync({
+        title: 'New Todo',
+        completed: false,
+      })
+      console.log('Created todo:', newTodo)
+    } catch (error) {
+      console.error('Failed to create todo:', error)
+    }
+  }
+}
+```
+
+## Error Handling
+
+```ts
+import { Component } from '@angular/core'
+import { injectMutation } from '@tanstack/angular-query-experimental'
+
+@Component({
+  selector: 'app-todo',
+  template: `
+    @if (mutation.isError()) {
+      <div class="error">
+        {{ mutation.error()?.message }}
+      </div>
+    }
+  `,
+})
+export class TodoComponent {
+  mutation = injectMutation(() => ({
+    mutationFn: createTodo,
+    onError: (error) => {
+      console.error('Mutation failed:', error)
+      // Handle error (show toast, etc.)
+    },
+    throwOnError: false, // Prevent throwing to error boundary
+  }))
+}
+```

@@ -1,0 +1,285 @@
+---
+title: InfiniteQueryObserver
+description: The InfiniteQueryObserver subscribes to an infinite query and provides reactive updates with pagination support.
+---
+
+The `InfiniteQueryObserver` extends `QueryObserver` to provide infinite query functionality with pagination. It's the core primitive that powers `useInfiniteQuery`.
+
+## Constructor
+
+```typescript
+const observer = new InfiniteQueryObserver<TQueryFnData, TError, TData, TQueryKey, TPageParam>(
+  client: QueryClient,
+  options: InfiniteQueryObserverOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>
+)
+```
+
+<ParamField path="client" type="QueryClient" required>
+  The QueryClient instance to use
+</ParamField>
+
+<ParamField path="options" type="InfiniteQueryObserverOptions" required>
+  <ParamField path="options.queryKey" type="QueryKey" required>
+    Unique key for the query
+  </ParamField>
+  
+  <ParamField path="options.queryFn" type="QueryFunction" required>
+    Function to fetch each page. Receives a `pageParam` in the context
+    ```typescript
+    ({ queryKey, pageParam, signal }) => Promise<TQueryFnData>
+    ```
+  </ParamField>
+  
+  <ParamField path="options.initialPageParam" type="TPageParam" required>
+    The default page param to use when fetching the first page
+  </ParamField>
+  
+  <ParamField path="options.getNextPageParam" type="GetNextPageParamFunction" required>
+    Function to get the next page param
+    ```typescript
+    (lastPage, allPages, lastPageParam, allPageParams) => TPageParam | undefined | null
+    ```
+  </ParamField>
+  
+  <ParamField path="options.getPreviousPageParam" type="GetPreviousPageParamFunction" optional>
+    Function to get the previous page param
+    ```typescript
+    (firstPage, allPages, firstPageParam, allPageParams) => TPageParam | undefined | null
+    ```
+  </ParamField>
+  
+  <ParamField path="options.maxPages" type="number" optional>
+    Maximum number of pages to store in the data
+  </ParamField>
+</ParamField>
+
+Inherits all other options from `QueryObserverOptions`.
+
+**Example:**
+```typescript
+const observer = new InfiniteQueryObserver(queryClient, {
+  queryKey: ['projects'],
+  queryFn: ({ pageParam = 0 }) => fetchProjects(pageParam),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage, allPages, lastPageParam) => {
+    return lastPage.hasMore ? lastPageParam + 1 : undefined
+  },
+  getPreviousPageParam: (firstPage, allPages, firstPageParam) => {
+    return firstPageParam > 0 ? firstPageParam - 1 : undefined
+  },
+})
+```
+
+## Methods
+
+### subscribe
+
+Subscribes to the infinite query observer and receives updates.
+
+```typescript
+observer.subscribe(
+  listener: (result: InfiniteQueryObserverResult<TData, TError>) => void
+): () => void
+```
+
+<ParamField path="listener" type="function" required>
+  Callback function that receives infinite query results
+</ParamField>
+
+**Returns:** Unsubscribe function.
+
+**Example:**
+```typescript
+const unsubscribe = observer.subscribe((result) => {
+  console.log('Pages:', result.data?.pages)
+  console.log('Has next page:', result.hasNextPage)
+  console.log('Is fetching next page:', result.isFetchingNextPage)
+})
+```
+
+### getCurrentResult
+
+Gets the current result of the infinite query.
+
+```typescript
+observer.getCurrentResult(): InfiniteQueryObserverResult<TData, TError>
+```
+
+**Returns:** The current infinite query result with pagination properties.
+
+### fetchNextPage
+
+Fetches the next page of data.
+
+```typescript
+observer.fetchNextPage(
+  options?: FetchNextPageOptions
+): Promise<InfiniteQueryObserverResult<TData, TError>>
+```
+
+<ParamField path="options" type="FetchNextPageOptions" optional>
+  <ParamField path="options.cancelRefetch" type="boolean" optional>
+    If true, cancels any running request before fetching. Defaults to true
+  </ParamField>
+  
+  <ParamField path="options.throwOnError" type="boolean" optional>
+    If true, throws errors instead of returning them in the result
+  </ParamField>
+</ParamField>
+
+**Returns:** Promise that resolves with the updated infinite query result.
+
+**Example:**
+```typescript
+const result = await observer.fetchNextPage()
+if (result.hasNextPage) {
+  console.log('More pages available')
+}
+```
+
+### fetchPreviousPage
+
+Fetches the previous page of data.
+
+```typescript
+observer.fetchPreviousPage(
+  options?: FetchPreviousPageOptions
+): Promise<InfiniteQueryObserverResult<TData, TError>>
+```
+
+<ParamField path="options" type="FetchPreviousPageOptions" optional>
+  <ParamField path="options.cancelRefetch" type="boolean" optional>
+    If true, cancels any running request before fetching. Defaults to true
+  </ParamField>
+  
+  <ParamField path="options.throwOnError" type="boolean" optional>
+    If true, throws errors instead of returning them in the result
+  </ParamField>
+</ParamField>
+
+**Returns:** Promise that resolves with the updated infinite query result.
+
+**Example:**
+```typescript
+const result = await observer.fetchPreviousPage()
+if (result.hasPreviousPage) {
+  console.log('Previous pages available')
+}
+```
+
+### setOptions
+
+Updates the observer's options.
+
+```typescript
+observer.setOptions(
+  options: InfiniteQueryObserverOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>
+): void
+```
+
+Automatically configures infinite query behavior.
+
+### getOptimisticResult
+
+Gets an optimistic result for infinite query options.
+
+```typescript
+observer.getOptimisticResult(
+  options: DefaultedInfiniteQueryObserverOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>
+): InfiniteQueryObserverResult<TData, TError>
+```
+
+**Returns:** An optimistic infinite query result.
+
+## Infinite Query Result Properties
+
+Infinite query results extend standard query results with additional pagination properties:
+
+### Data Properties
+
+<ParamField path="data" type="InfiniteData<TData, TPageParam> | undefined">
+  The infinite query data object containing:
+  - `pages`: Array of page data
+  - `pageParams`: Array of page parameters used to fetch each page
+</ParamField>
+
+### Pagination Properties
+
+<ParamField path="hasNextPage" type="boolean">
+  True if there is a next page to fetch (based on getNextPageParam returning a non-nullish value)
+</ParamField>
+
+<ParamField path="hasPreviousPage" type="boolean">
+  True if there is a previous page to fetch (based on getPreviousPageParam returning a non-nullish value)
+</ParamField>
+
+<ParamField path="isFetchingNextPage" type="boolean">
+  True while fetching the next page with fetchNextPage
+</ParamField>
+
+<ParamField path="isFetchingPreviousPage" type="boolean">
+  True while fetching the previous page with fetchPreviousPage
+</ParamField>
+
+<ParamField path="isFetchNextPageError" type="boolean">
+  True if the query failed while fetching the next page
+</ParamField>
+
+<ParamField path="isFetchPreviousPageError" type="boolean">
+  True if the query failed while fetching the previous page
+</ParamField>
+
+### Methods
+
+<ParamField path="fetchNextPage" type="function">
+  Function to fetch the next page
+  ```typescript
+  (options?: FetchNextPageOptions) => Promise<InfiniteQueryObserverResult>
+  ```
+</ParamField>
+
+<ParamField path="fetchPreviousPage" type="function">
+  Function to fetch the previous page
+  ```typescript
+  (options?: FetchPreviousPageOptions) => Promise<InfiniteQueryObserverResult>
+  ```
+</ParamField>
+
+### Inherited Properties
+
+All standard query result properties are also available:
+- `status`, `fetchStatus`
+- `isLoading`, `isFetching`, `isRefetching`
+- `isError`, `isSuccess`, `isPending`
+- `error`, `errorUpdatedAt`
+- `failureCount`, `failureReason`
+- `refetch`
+- And more...
+
+## Usage Example
+
+```typescript
+import { InfiniteQueryObserver } from '@tanstack/query-core'
+
+const observer = new InfiniteQueryObserver(queryClient, {
+  queryKey: ['projects'],
+  queryFn: async ({ pageParam = 0 }) => {
+    const response = await fetch(`/api/projects?page=${pageParam}`)
+    return response.json()
+  },
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.nextCursor,
+})
+
+const unsubscribe = observer.subscribe((result) => {
+  if (result.isSuccess) {
+    console.log('All pages:', result.data.pages)
+    console.log('Page params:', result.data.pageParams)
+    
+    if (result.hasNextPage) {
+      // Can load more
+      observer.fetchNextPage()
+    }
+  }
+})
+```
