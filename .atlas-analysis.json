@@ -1,0 +1,249 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "TanStack Query",
+  "projectDescription": "Powerful asynchronous state management, server-state utilities and data fetching for the web",
+  "theme": "mint",
+  "primaryColor": "#eab968",
+  "lightColor": "#7b3605",
+  "darkColor": "#4a9261",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quick-start",
+              "comparison"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/queries",
+              "concepts/mutations",
+              "concepts/query-keys",
+              "concepts/query-functions",
+              "concepts/caching",
+              "concepts/query-invalidation"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/important-defaults",
+              "guides/query-options",
+              "guides/parallel-queries",
+              "guides/dependent-queries",
+              "guides/infinite-queries",
+              "guides/paginated-queries",
+              "guides/prefetching",
+              "guides/optimistic-updates",
+              "guides/suspense",
+              "guides/ssr",
+              "guides/query-cancellation",
+              "guides/query-retries",
+              "guides/network-mode",
+              "guides/filters",
+              "guides/testing",
+              "guides/typescript",
+              "guides/graphql"
+            ]
+          },
+          {
+            "group": "Framework Integrations",
+            "pages": [
+              "frameworks/react",
+              "frameworks/vue",
+              "frameworks/solid",
+              "frameworks/svelte",
+              "frameworks/angular"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/render-optimizations",
+              "advanced/request-waterfalls",
+              "advanced/initial-query-data",
+              "advanced/placeholder-query-data",
+              "advanced/background-fetching",
+              "advanced/window-focus-refetching",
+              "advanced/disabling-queries",
+              "advanced/scroll-restoration",
+              "advanced/client-state"
+            ]
+          },
+          {
+            "group": "Plugins & Extensions",
+            "pages": [
+              "plugins/devtools",
+              "plugins/persist-client",
+              "plugins/eslint",
+              "plugins/codemods"
+            ]
+          },
+          {
+            "group": "Migration Guides",
+            "pages": [
+              "migration/migrating-to-v5",
+              "migration/migrating-to-v4",
+              "migration/migrating-to-v3"
+            ]
+          },
+          {
+            "group": "Community",
+            "pages": [
+              "community/resources",
+              "community/contributing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core",
+            "pages": [
+              "api/query-client",
+              "api/query-cache",
+              "api/mutation-cache",
+              "api/query-observer",
+              "api/infinite-query-observer",
+              "api/queries-observer"
+            ]
+          },
+          {
+            "group": "React",
+            "pages": [
+              "api/react/use-query",
+              "api/react/use-mutation",
+              "api/react/use-infinite-query",
+              "api/react/use-queries",
+              "api/react/use-suspense-query",
+              "api/react/use-suspense-infinite-query",
+              "api/react/use-suspense-queries",
+              "api/react/use-prefetch-query",
+              "api/react/use-prefetch-infinite-query",
+              "api/react/use-is-fetching",
+              "api/react/use-is-mutating",
+              "api/react/use-mutation-state",
+              "api/react/query-client-provider",
+              "api/react/hydration-boundary",
+              "api/react/query-error-reset-boundary",
+              "api/react/query-options",
+              "api/react/infinite-query-options",
+              "api/react/mutation-options"
+            ]
+          },
+          {
+            "group": "Vue",
+            "pages": [
+              "api/vue/use-query",
+              "api/vue/use-mutation",
+              "api/vue/use-infinite-query",
+              "api/vue/use-queries",
+              "api/vue/use-is-fetching",
+              "api/vue/use-is-mutating",
+              "api/vue/use-mutation-state",
+              "api/vue/query-client"
+            ]
+          },
+          {
+            "group": "Solid",
+            "pages": [
+              "api/solid/create-query",
+              "api/solid/create-mutation",
+              "api/solid/create-infinite-query",
+              "api/solid/create-queries",
+              "api/solid/query-client"
+            ]
+          },
+          {
+            "group": "Svelte",
+            "pages": [
+              "api/svelte/create-query",
+              "api/svelte/create-mutation",
+              "api/svelte/create-infinite-query",
+              "api/svelte/query-client"
+            ]
+          },
+          {
+            "group": "Angular",
+            "pages": [
+              "api/angular/inject-query",
+              "api/angular/inject-mutation",
+              "api/angular/inject-infinite-query",
+              "api/angular/inject-queries",
+              "api/angular/query-client"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/focus-manager",
+              "api/online-manager",
+              "api/notify-manager",
+              "api/timeout-manager",
+              "api/hydration"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Framework-agnostic core with adapters for React, Vue, Solid, Svelte, and Angular",
+    "Automatic caching with smart background refetching and stale-while-revalidate strategy",
+    "Powerful query invalidation and cache management",
+    "Infinite queries and paginated data support",
+    "Optimistic updates and mutations with automatic rollback",
+    "Request deduplication and query cancellation",
+    "React Suspense and streaming SSR support",
+    "Built-in devtools for debugging",
+    "TypeScript-first with complete type safety",
+    "Zero dependencies and tiny bundle size"
+  ],
+  "publicApiSurface": [
+    "QueryClient",
+    "QueryCache",
+    "MutationCache",
+    "QueryObserver",
+    "InfiniteQueryObserver",
+    "QueriesObserver",
+    "MutationObserver",
+    "useQuery",
+    "useMutation",
+    "useInfiniteQuery",
+    "useQueries",
+    "useSuspenseQuery",
+    "useSuspenseInfiniteQuery",
+    "useSuspenseQueries",
+    "usePrefetchQuery",
+    "usePrefetchInfiniteQuery",
+    "useIsFetching",
+    "useIsMutating",
+    "useMutationState",
+    "QueryClientProvider",
+    "HydrationBoundary",
+    "QueryErrorResetBoundary",
+    "queryOptions",
+    "infiniteQueryOptions",
+    "mutationOptions",
+    "focusManager",
+    "onlineManager",
+    "notifyManager",
+    "timeoutManager",
+    "hydrate",
+    "dehydrate",
+    "hashKey",
+    "matchQuery",
+    "matchMutation",
+    "keepPreviousData",
+    "skipToken"
+  ]
+}
